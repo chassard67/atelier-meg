@@ -27,6 +27,7 @@ export const LICENCE_GRACE_DAYS = 14;
 
 // Notes affichées aux utilisateurs quand la COQUILLE elle-même est mise à jour.
 export const EXTENSION_NOTES = {
+  '1.4.0': ['L\'extension ne fonctionne que si sa publication GitHub répond : sinon elle se désactive et l\'indique (pastille OFF, message dans MEG).'],
   '1.3.0': ['Pastille « MAJ » sur l\'icône et message dans la fenêtre de l\'extension quand une nouvelle version est disponible.'],
   '1.2.0': ['Nouvelle icône « MEG ».'],
   '1.1.0': ['Les factures téléchargées portent bien le nom « Fournisseur - JJ-MM-AAAA - N°.pdf », dans le sous-dossier de la société.'],

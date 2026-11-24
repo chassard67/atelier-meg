@@ -186,6 +186,7 @@ async function fetchText(url, headers) {
       const res = await fetch(url + sep + 't=' + Date.now(), { cache: 'no-store', headers: headers || undefined });
       if (res.ok) return res.text();
       lastErr = new Error(`HTTP ${res.status} sur ${url}`);
+      lastErr.status = res.status;
       // 403 = licence refusée côté serveur ; inutile de réessayer.
       if (res.status === 403) break;
       if (res.status === 404 && !/manifest\.json|\/licence/.test(url)) break;
@@ -230,8 +231,13 @@ async function doCheckForUpdates(reason) {
   let licence = null;
   let changed = false;
   let error = null;
+  // Publication GitHub : 'ok' | 'unreachable' (réseau, VPN, GitHub en panne) | 'removed' (dépôt supprimé ou renommé → 404).
+  // Hors 'ok', AUCUN module n'est injecté : l'extension ne fonctionne que si la publication répond.
+  let publication = 'ok';
+  let step = 'manifest';
   try {
     manifest = JSON.parse(await fetchText(base + 'manifest.json'));
+    step = 'modules';
     if (!manifest || !Array.isArray(manifest.scripts) || !manifest.runtime) {
       throw new Error('manifest.json invalide');
     }
@@ -276,7 +282,18 @@ async function doCheckForUpdates(reason) {
     }
   } catch (e) {
     error = String(e.message || e);
+    if (step === 'manifest') {
+      publication = e && e.status === 404 ? 'removed' : 'unreachable';
+      if (publication === 'removed') {
+        // Publication supprimée : on efface aussi le code gardé en cache.
+        const all = await chrome.storage.local.get(null);
+        const codeKeys = Object.keys(all).filter((k) => k.startsWith('code:'));
+        if (codeKeys.length) await chrome.storage.local.remove(codeKeys);
+        manifest = null;
+      }
+    }
   }
+  const publicationChanged = (state.publication || 'ok') !== publication;
 
   if (!licence) licence = await checkLicence(base, cfg, manifest);
   licence.keyHash = keyHash;
@@ -284,6 +301,7 @@ async function doCheckForUpdates(reason) {
 
   await patchState({
     manifest,
+    publication,
     licence,
     lastCheck: Date.now(),
     lastError: error,
@@ -292,7 +310,7 @@ async function doCheckForUpdates(reason) {
 
   const nothingRegistered =
     userScriptsAvailable() && (await chrome.userScripts.getScripts()).length === 0;
-  if (changed || licenceChanged || nothingRegistered || reason !== 'alarm') {
+  if (changed || licenceChanged || publicationChanged || nothingRegistered || reason !== 'alarm') {
     await applyRegistrations();
   }
   await refreshBadge();
@@ -330,14 +348,59 @@ function licenceBannerCode(message) {
 })();`;
 }
 
+const PUBLICATION_MESSAGES = {
+  unreachable:
+    'Atelier MEG est désactivé : le serveur de publication (GitHub) ne répond pas. Vérifiez la connexion internet ou le VPN ; ' +
+    'l\'extension se réactive d\'elle-même dès qu\'il répond (ou icône Atelier MEG → « Vérifier les mises à jour », puis rechargez la page).',
+  removed:
+    'Atelier MEG est désactivé : sa publication n\'existe plus (dépôt GitHub supprimé ou renommé). ' +
+    'Vous pouvez désinstaller l\'extension (chrome://extensions → Atelier MEG → Supprimer).',
+};
+
+function publicationBannerCode(message) {
+  return `(function () {
+  if (window.__atmPubBanner) return;
+  window.__atmPubBanner = true;
+  var show = function () {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:2147483647;max-width:min(900px,94vw);display:flex;gap:12px;align-items:flex-start;' +
+      'background:#7f1d1d;color:#fff;padding:10px 14px;border-radius:8px;font:13px/1.4 system-ui,Segoe UI,Arial;box-shadow:0 6px 20px rgba(0,0,0,.3)';
+    var t = document.createElement('div');
+    t.style.flex = '1';
+    t.textContent = ${JSON.stringify(message)};
+    var x = document.createElement('button');
+    x.textContent = '✕';
+    x.title = 'Fermer';
+    x.style.cssText = 'background:none;border:0;color:#fff;font:700 16px system-ui;cursor:pointer';
+    x.onclick = function () { d.remove(); };
+    d.appendChild(t); d.appendChild(x);
+    document.body.appendChild(d);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+})();`;
+}
+
 async function applyRegistrations() {
   if (!userScriptsAvailable()) {
     await refreshBadge();
     return { ok: false, error: 'userScripts indisponible' };
   }
   const cfg = await getConfig();
-  const { manifest, licence } = await getState();
+  const { manifest, licence, publication } = await getState();
   await chrome.userScripts.unregister(); // repart de zéro (idempotent)
+  if (publication && publication !== 'ok') {
+    await chrome.userScripts.register([
+      {
+        id: 'atm-publication',
+        matches: APP_MATCHES,
+        runAt: 'document_idle',
+        world: 'MAIN',
+        allFrames: false,
+        js: [{ code: publicationBannerCode(PUBLICATION_MESSAGES[publication] || PUBLICATION_MESSAGES.unreachable) }],
+      },
+    ]);
+    return { ok: true, count: 0, publication };
+  }
   if (!manifest) return { ok: true, count: 0 };
 
   if (!licenceOk(licence)) {
@@ -384,7 +447,7 @@ async function applyRegistrations() {
 }
 
 async function refreshBadge() {
-  const { manifest, lastError, licence } = await getState();
+  const { manifest, lastError, licence, publication } = await getState();
   let text = '';
   let color = '#10b981';
   let title = 'Atelier MEG';
@@ -392,6 +455,14 @@ async function refreshBadge() {
     text = '!';
     color = '#dc2626';
     title += ' — activer « Autoriser les scripts utilisateur »';
+  } else if (publication === 'removed') {
+    text = 'OFF';
+    color = '#dc2626';
+    title += ' — désactivée : publication GitHub supprimée ou renommée';
+  } else if (publication === 'unreachable') {
+    text = 'OFF';
+    color = '#dc2626';
+    title += ' — désactivée : serveur de publication injoignable (' + (lastError || '') + ')';
   } else if (manifest && !licenceOk(licence)) {
     text = 'LIC';
     color = '#dc2626';
@@ -653,6 +724,15 @@ chrome.runtime.onStartup.addListener(async () => {
   await scheduleAlarm();
   await applyRegistrations();
   await checkForUpdates('startup');
+});
+
+// Vérification aussi à l'ouverture d'une page MEG (au plus toutes les 5 min) : une
+// publication supprimée ou injoignable désactive l'extension sans attendre l'alarme.
+const APP_URL_RE = /^https:\/\/mon-expert-en-gestion\.fr\//;
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'loading' || !APP_URL_RE.test(tab.url || changeInfo.url || '')) return;
+  const { lastCheck = 0 } = await getState();
+  if (Date.now() - lastCheck > 5 * 60e3) checkForUpdates('page');
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {

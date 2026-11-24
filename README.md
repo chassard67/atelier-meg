@@ -32,6 +32,17 @@ push sur main ──► GitHub Actions (node tools/build.mjs --zip) ──► Gi
 - **Modifier un module** = éditer `scripts/xxx.js`, incrémenter `@version` + CHANGELOG, `git push`.
 - **Modifier la coquille** (`extension/`) = rare ; les utilisateurs retéléchargent le zip.
 
+## Dépendance à la publication GitHub (extension ≥ 1.4.0)
+
+L'extension ne fonctionne **que si** https://chassard67.github.io/atelier-meg/manifest.json répond (vérifié au démarrage
+de Chrome, toutes les 30 min et à l'ouverture d'une page MEG — au plus toutes les 5 min) :
+
+| Situation | Effet |
+|---|---|
+| Publication joignable | Modules injectés normalement. |
+| Injoignable (réseau, VPN, GitHub en panne) | Aucun module ; pastille **OFF** ; bandeau rouge dans MEG. Réactivation automatique dès qu'elle répond. |
+| 404 — dépôt supprimé ou renommé, Pages désactivé | Aucun module ; code en cache effacé ; pastille **OFF** ; bandeau « publication supprimée ». |
+
 ## Arborescence
 
 | Chemin | Rôle |

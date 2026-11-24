@@ -119,7 +119,14 @@ async function render() {
 
   const err = $('error');
   err.hidden = !state.lastError;
-  err.textContent = state.lastError ? 'Dernière vérification en échec : ' + state.lastError : '';
+  err.textContent =
+    state.publication === 'removed'
+      ? 'Extension désactivée : la publication GitHub n\'existe plus (dépôt supprimé ou renommé).'
+      : state.publication === 'unreachable'
+      ? 'Extension désactivée : serveur de publication injoignable (connexion, VPN ?). Réessayez « Vérifier les mises à jour ». Détail : ' + state.lastError
+      : state.lastError
+      ? 'Dernière vérification en échec : ' + state.lastError
+      : '';
 
   // Catalogue publié : groupes de fonctionnalités (modules ou réglages).
   const box = $('catalog');
