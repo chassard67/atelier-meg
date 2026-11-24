@@ -16,6 +16,10 @@ Durée : 3 minutes. Chrome à jour (version 120 minimum).
 4. Sur la carte « Atelier MEG » → **Détails** → activer **Autoriser les scripts utilisateur**
    *(indispensable : sans ça, aucun module ne s'exécute)*.
 5. Icône puzzle 🧩 → **épingler** Atelier MEG.
+6. **Mise à jour automatique (une seule fois)** : dans `C:\AtelierMEG\extension\maj`, double-cliquer
+   **`activer-maj-auto.cmd`**. Une tâche planifiée Windows (sans droits administrateur) vérifie toutes les 2 heures et à
+   chaque ouverture de session ; l'extension se recharge ensuite d'elle-même. Journal : `maj\maj.log`.
+   (`desactiver-maj-auto.cmd` pour arrêter.)
 
 ## 3. Préparer chaque dossier MEG (une fois)
 
@@ -37,6 +41,7 @@ Conseil : dans Chrome → Paramètres → Téléchargements, désactiver « Touj
 
 ## Mises à jour
 
-- **Modules** : automatiques (démarrage de Chrome, puis toutes les 30 min). Pour forcer :
-  icône Atelier MEG → **Vérifier les mises à jour** → **Recharger les onglets MEG**.
-- **Extension** (rare, pastille **EXT**) : voir ci-dessus.
+- **Modules (fonctionnalités)** : automatiques, sans rien faire (démarrage de Chrome, toutes les 30 min, ouverture de MEG).
+- **Extension elle-même** : automatique si l'étape 2.6 a été faite. Sinon, quand MEG affiche « Nouvelle version de
+  l'extension » : télécharger le zip, l'extraire par-dessus `C:\AtelierMEG\extension` — l'extension se recharge seule
+  (plus besoin de ↻ dans chrome://extensions).

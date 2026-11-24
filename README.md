@@ -32,6 +32,26 @@ push sur main ──► GitHub Actions (node tools/build.mjs --zip) ──► Gi
 - **Modifier un module** = éditer `scripts/xxx.js`, incrémenter `@version` + CHANGELOG, `git push`.
 - **Modifier la coquille** (`extension/`) = rare ; les utilisateurs retéléchargent le zip.
 
+## Mises à jour sans intervention (extension ≥ 2.0.0)
+
+La coquille (`extension/`) est conçue pour ne plus changer : tout passe par les modules publiés.
+
+- **Capacités génériques** offertes aux modules : `ATM.http` (tout hôte déclaré par `@connect`, réponses texte, JSON ou
+  binaire base64, cookies en option), `ATM.download` (data: ou https:, nom et sous-dossier imposés), `ATM.chrome(api, …)`
+  (downloads.*, tabs.*, windows.*, notifications.* — liste : `ATM.info()`), stockage, notes de version.
+- **Nouveaux sites** : un `@match` dans un module suffit (droits d'hôte larges + pont injecté dynamiquement).
+- **Réglages distants** (`publish.json → config`) : `checkIntervalMin`, `pageCheckMinutes`, `offlineGraceMinutes`
+  (tolérance hors ligne, 0 = coupure immédiate). **Annonce** (`publish.json → announcement: {text, level}`) affichée dans la
+  fenêtre de l'extension.
+- **Coquille elle-même** : `extension/maj/activer-maj-auto.cmd` (une fois par poste) crée une tâche planifiée qui extrait le
+  zip publié par-dessus le dossier quand sa version est plus récente ; l'extension détecte ses fichiers modifiés et se
+  recharge seule (`chrome.runtime.reload()`). Ne monter `extension/manifest.json → version` que pour un vrai changement de
+  coquille.
+
+Reste manuel : la toute première installation (mode développeur + « Autoriser les scripts utilisateur ») et le
+double-clic sur `activer-maj-auto.cmd`. Alternative 100 % automatique : extension empaquetée (.crx) déployée par stratégie
+Chrome (GPO/Intune `ExtensionInstallForcelist`) si le cabinet gère ses postes.
+
 ## Dépendance à la publication GitHub (extension ≥ 1.4.0)
 
 L'extension ne fonctionne **que si** https://chassard67.github.io/atelier-meg/manifest.json répond (vérifié au démarrage

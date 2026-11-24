@@ -12,7 +12,7 @@
     "date": "2026-11-24",
     "notes": [
       "Extension 2.0.0 : dernière installation manuelle. Ensuite, tout se met à jour depuis GitHub.",
-      "Pour que l'extension elle-même se mette aussi à jour seule : double-clic une fois sur maj\activer-maj-auto.cmd dans le dossier de l'extension."
+      "Pour que l'extension elle-même se mette aussi à jour seule : double-clic une fois sur maj\\activer-maj-auto.cmd dans le dossier de l'extension."
     ]
   },
   "defaultMatches": [
