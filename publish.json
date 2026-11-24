@@ -8,11 +8,10 @@
   "announcement": null,
   "licenceRequired": false,
   "release": {
-    "version": "2.4.0",
+    "version": "2.5.0",
     "date": "2026-11-24",
     "notes": [
-      "Achats : s'il y a des factures cochées, seules celles-ci sont téléchargées, quel que soit le bouton.",
-      "Achats : bouton « ↩ Remettre en Non téléchargé » dans le bandeau de sélection, pour annuler un téléchargement fait par erreur."
+      "Achats : cochez les factures, le bandeau propose l'action adaptée — Télécharger (puis impression groupée), Marquer non téléchargées, ou un choix si la sélection mélange les deux."
     ]
   },
   "defaultMatches": [

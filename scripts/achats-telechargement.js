@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Achats : téléchargement en lot des factures
 // @namespace    https://nicolas.chassard/meg
-// @version      1.8.0
-// @description  v1.8.0 (2026-11-24) : factures cochées = seules traitées, quel que soit le bouton ; bouton « Remettre en
+// @version      1.9.0
+// @description  v1.9.0 (2026-11-24) : plus de bouton en haut (consigne « cochez les factures ») ; le bandeau de sélection
+//               propose l'action adaptée (télécharger / marquer non téléchargé / choix si sélection mixte).
+//               v1.8.0 (2026-11-24) : factures cochées = seules traitées, quel que soit le bouton ; bouton « Remettre en
 //               Non téléchargé » pour annuler un téléchargement fait par erreur.
 //               v1.7.0 (2026-11-24) : un seul bouton Télécharger ; à la fin, proposition de fusionner les factures en un
 //               PDF à imprimer. Passage en Téléchargé à la fin (après impression confirmée si on imprime).
@@ -28,6 +30,11 @@
 // ==/UserScript==
 
 // CHANGELOG
+// 1.9.0 (2026-11-24) — bouton du haut supprimé, remplacé par la consigne « Cochez les factures à télécharger ou à
+//                      imprimer ». Bandeau de sélection, un seul bouton selon les factures cochées :
+//                      non téléchargées → « ⬇ Télécharger (n) » (puis proposition d'impression groupée) ;
+//                      déjà téléchargées → « ↩ Marquer non téléchargées (n) » ;
+//                      les deux → « Que faire ? (n) » : avertissement + choix Télécharger / Marquer non téléchargées.
 // 1.8.0 (2026-11-24) — s'il y a des factures cochées, SEULES celles-ci sont traitées, que l'on clique le bouton du haut
 //                      ou celui du bandeau (le bouton du haut affiche alors « Télécharger la sélection (n) »).
 //                      Bandeau de sélection : « ↩ Remettre en Non téléchargé (n) » — remet « En attente » les échéances
@@ -356,6 +363,9 @@
         btnPdf.hidden = false;
         btnPdf.onclick = onClick;
       },
+      close() {
+        overlay.remove();
+      },
       finish() {
         btnStop.hidden = true;
         btnClose.hidden = false;
@@ -621,21 +631,28 @@
     if (existing) return;
     const importer = findImporter();
     if (!importer || !importer.parentElement) return;
-    const b = el('button', btnStyle(importer.offsetHeight) + ';margin-right:8px', '⬇ Télécharger les factures');
+    // Consigne à la place de l'ancien bouton : tout passe par la sélection (bandeau).
+    const b = el(
+      'span',
+      'display:inline-flex;align-items:center;gap:6px;margin-right:8px;color:#5b45f5;font:600 13px system-ui,Segoe UI,Arial;white-space:nowrap',
+      '☑ Cochez les factures à télécharger ou à imprimer'
+    );
     b.id = BTN_ID;
-    b.type = 'button';
-    b.title = 'Sans case cochée : toutes les factures non téléchargées. Avec des cases cochées : seulement celles-ci.';
-    b.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      run();
-    });
     importer.parentElement.insertBefore(b, importer);
   }
 
-  // Bandeau « n éléments sélectionnés » de MEG : la suppression est masquée (CSS),
-  // on y met « Télécharger la sélection ».
+  // Bandeau « n éléments sélectionnés » de MEG : la suppression est masquée (CSS) ; un seul bouton, adapté à la
+  // sélection (non téléchargées / déjà téléchargées / les deux).
   const MASS_BTN_ID = 'atm-mass-dl';
+  const estTelechargee = (a) => a && a.etat === 'REGLE';
+  function etatSelection() {
+    const rows = selectedRows();
+    const achats = rows.map(achatOfRow);
+    const tel = rows.filter((r, i) => estTelechargee(achats[i]));
+    const non = rows.filter((r, i) => !estTelechargee(achats[i]));
+    return { rows, tel, non };
+  }
+
   function ensureMassButton() {
     if (!isLga()) return;
     const zone = document.getElementById('mass-action-buttons');
@@ -648,45 +665,61 @@
       b.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        run({ selection: true });
+        actionSelection();
       });
       zone.appendChild(b);
     }
-    let r = document.getElementById(MASS_BTN_ID + '-annuler');
-    if (!r) {
-      r = el('button', btnStyle(30) + ';border-color:#fff;color:#b45309;margin-left:8px');
-      r.id = MASS_BTN_ID + '-annuler';
-      r.type = 'button';
-      r.title = 'Remet en « Non téléchargé » les factures cochées passées en Téléchargé par erreur';
-      r.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        remettreNonTelecharge();
-      });
-      zone.appendChild(r);
-    }
-    const n = selectedRows().length;
-    const label = `⬇ Télécharger la sélection (${n})`;
+    const { rows, tel, non } = etatSelection();
+    const label = !rows.length
+      ? '—'
+      : !tel.length
+      ? `⬇ Télécharger (${rows.length})`
+      : !non.length
+      ? `↩ Marquer non téléchargées (${rows.length})`
+      : `Que faire ? (${rows.length})`;
     if (b.textContent !== label) b.textContent = label;
-    const labelR = `↩ Remettre en Non téléchargé (${n})`;
-    if (r.textContent !== labelR) r.textContent = labelR;
+    const title = !tel.length
+      ? 'Télécharge les factures cochées, puis propose de les imprimer en une seule fois'
+      : !non.length
+      ? 'Repasse les factures cochées en « Non téléchargé »'
+      : `${tel.length} facture(s) déjà téléchargée(s) et ${non.length} non téléchargée(s) : choisir l'action`;
+    if (b.title !== title) b.title = title;
   }
 
-  // Bouton du haut : son libellé suit la sélection (les cochées sont seules traitées).
-  function refreshTopLabel() {
-    const b = document.getElementById(BTN_ID);
-    if (!b) return;
-    const n = isLga() ? selectedRows().length : 0;
-    const label = n ? `⬇ Télécharger la sélection (${n})` : '⬇ Télécharger les factures';
-    if (b.textContent !== label) b.textContent = label;
+  async function actionSelection() {
+    if (running) return;
+    const { rows, tel, non } = etatSelection();
+    if (!rows.length) return;
+    if (!tel.length) return run({ selection: true });
+    if (!non.length) return remettreNonTelecharge(rows);
+    // Sélection mixte : avertissement + choix.
+    running = true;
+    const ui = panel('Factures sélectionnées');
+    let choix = null;
+    try {
+      ui.status(`${tel.length} facture(s) déjà téléchargée(s), ${non.length} non téléchargée(s).`);
+      const telecharger = await ui.ask(
+        `Attention : ${tel.length} des ${rows.length} factures cochées ont déjà été téléchargées.\nQue voulez-vous faire ?\n\n` +
+          `• Télécharger les ${rows.length} factures (les déjà téléchargées sont re-téléchargées, leur statut ne change pas),\n` +
+          `• ou marquer les ${tel.length} déjà téléchargée(s) comme non téléchargée(s).`,
+        `⬇ Télécharger les ${rows.length} factures`,
+        `↩ Marquer ${tel.length} non téléchargée(s)`
+      );
+      choix = telecharger ? 'telecharger' : 'marquer';
+    } finally {
+      running = false;
+      ui.close();
+    }
+    if (choix === 'telecharger') run({ selection: true });
+    else if (choix === 'marquer') remettreNonTelecharge(tel);
   }
 
   // ---------------------------------------------------------------------------
   // Remettre en « Non téléchargé » (annulation d'un téléchargement fait par erreur)
   // ---------------------------------------------------------------------------
-  async function remettreNonTelecharge() {
+  async function remettreNonTelecharge(lignes) {
     if (running) return;
-    const coches = selectedRows();
+    const coches = lignes || selectedRows();
     if (!coches.length) return;
     const achats = coches.map(achatOfRow);
     running = true;
@@ -998,7 +1031,6 @@ html.atm-lga #mass-action-buttons > :not([id^="${MASS_BTN_ID}"]) { display: none
     // Cases à cocher : le libellé du bouton du bandeau suit la sélection.
     const majLibelles = () => {
       ensureMassButton();
-      refreshTopLabel();
     };
     document.addEventListener('change', () => setTimeout(majLibelles, 0), true);
     document.addEventListener('click', () => setTimeout(majLibelles, 50), true);
