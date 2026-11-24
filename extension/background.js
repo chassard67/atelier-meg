@@ -400,6 +400,10 @@ async function refreshBadge() {
     text = 'EXT';
     color = '#f97316';
     title += ` — nouvelle version de l'extension requise (${manifest.minExtensionVersion})`;
+  } else if (manifest && compareVersions(manifest.latestExtensionVersion, EXT_VERSION) > 0) {
+    text = 'MAJ';
+    color = '#f97316';
+    title += ` — nouvelle version de l'extension disponible (${manifest.latestExtensionVersion}, installée : ${EXT_VERSION})`;
   } else if (!manifest && lastError) {
     text = '?';
     color = '#f97316';

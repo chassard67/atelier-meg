@@ -1,11 +1,14 @@
 // ==UserScript==
 // @name         Socle Atelier (diagnostic + notes de mise à jour)
 // @namespace    https://nicolas.chassard/meg
-// @version      1.0.0
-// @description  v1.0.0 (2026-11-24) : versions dans la console + fenêtre « mise à jour activée » (une fois par mise à jour).
+// @version      1.1.0
+// @description  v1.1.0 (2026-11-24) : bandeau « nouvelle version de l'extension disponible » si la coquille installée
+//               n'est pas la dernière publiée (lien vers le zip + marche à suivre).
+//               v1.0.0 (2026-11-24) : versions dans la console + fenêtre « mise à jour activée » (une fois par mise à jour).
 // @author       Nicolas
 // @match        https://mon-expert-en-gestion.fr/*
 // @run-at       document-start
+// @connect      chassard67.github.io
 // @noframes
 // ==/UserScript==
 
@@ -60,7 +63,76 @@
     ok.focus();
   }
 
+  // ---------------------------------------------------------------------------
+  // L'extension installée est-elle la dernière publiée ?
+  // ---------------------------------------------------------------------------
+  const PUB = 'https://chassard67.github.io/atelier-meg/';
+  const BANNER_ID = 'atm-ext-update';
+
+  function cmpVersions(a, b) {
+    const pa = String(a || '0').split('.').map((x) => parseInt(x, 10) || 0);
+    const pb = String(b || '0').split('.').map((x) => parseInt(x, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return d > 0 ? 1 : -1;
+    }
+    return 0;
+  }
+
+  function showUpdateBanner(latest, requise) {
+    if (document.getElementById(BANNER_ID)) return;
+    try {
+      if (!requise && sessionStorage.getItem(BANNER_ID) === latest) return; // fermé pour cette session
+    } catch (e) {}
+    const bar = el(
+      'div',
+      'position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:2147483645;display:flex;align-items:center;gap:12px;' +
+        'max-width:min(980px,94vw);padding:10px 14px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);' +
+        'font:13px/1.4 system-ui,Segoe UI,Arial,sans-serif;color:#fff;background:' + (requise ? '#b91c1c' : '#c2410c')
+    );
+    bar.id = BANNER_ID;
+    const txt = el('div', 'flex:1');
+    txt.appendChild(
+      el(
+        'strong',
+        null,
+        (requise ? 'Mise à jour obligatoire' : 'Nouvelle version') + ` de l'extension Atelier MEG : ${latest} (installée : ${ATM.extVersion || '?'}). `
+      )
+    );
+    txt.appendChild(
+      el('span', null, 'Téléchargez le zip, extrayez-le par-dessus le dossier de l\'extension, puis ↻ sur la carte Atelier MEG dans chrome://extensions et rechargez MEG.')
+    );
+    const dl = el('a', 'flex:none;background:#fff;color:#111827;border-radius:6px;padding:6px 12px;font-weight:600;text-decoration:none', 'Télécharger le zip');
+    dl.href = PUB + 'atelier-meg-extension.zip';
+    dl.target = '_blank';
+    dl.rel = 'noopener';
+    const close = el('button', 'flex:none;background:none;border:0;color:#fff;font:700 16px system-ui;cursor:pointer', '✕');
+    close.title = 'Masquer jusqu\'à la prochaine session';
+    close.onclick = () => {
+      try {
+        sessionStorage.setItem(BANNER_ID, latest);
+      } catch (e) {}
+      bar.remove();
+    };
+    bar.append(txt, dl, close);
+    document.body.appendChild(bar);
+  }
+
+  async function checkExtension() {
+    try {
+      const r = await ATM.http({ url: PUB + 'manifest.json?t=' + Date.now(), responseType: 'json' });
+      const m = r && r.body;
+      if (!m || !m.latestExtensionVersion) return;
+      if (cmpVersions(m.latestExtensionVersion, ATM.extVersion) > 0) {
+        showUpdateBanner(m.latestExtensionVersion, cmpVersions(m.minExtensionVersion, ATM.extVersion) > 0);
+      }
+    } catch (e) {
+      ATM.log('vérification de version impossible :', e.message || e);
+    }
+  }
+
   ATM.onReady(() => {
+    setTimeout(checkExtension, 2500);
     // Petit délai : laisse l'appli s'afficher avant la fenêtre.
     setTimeout(() => {
       ATM.call('notices-get')

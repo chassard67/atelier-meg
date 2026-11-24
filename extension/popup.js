@@ -107,6 +107,12 @@ async function render() {
       `Les modules publiés demandent l'extension ${m.minExtensionVersion} ou plus (vous avez ${st.extVersion}). ` +
       `Téléchargez la nouvelle version (${new URL('atelier-meg-extension.zip', cfg.baseUrl)}), ` +
       `extrayez-la par-dessus le dossier de l'extension puis cliquez sur ↻ dans chrome://extensions.`;
+  } else if (m && cmp(m.latestExtensionVersion, st.extVersion) > 0) {
+    warnExt.hidden = false;
+    warnExt.textContent =
+      `Nouvelle version de l'extension disponible : ${m.latestExtensionVersion} (vous avez ${st.extVersion}). ` +
+      `Téléchargez-la (${new URL('atelier-meg-extension.zip', cfg.baseUrl)}), ` +
+      `extrayez-la par-dessus le dossier de l'extension puis cliquez sur ↻ dans chrome://extensions.`;
   } else {
     warnExt.hidden = true;
   }
