@@ -27,6 +27,10 @@ export const LICENCE_GRACE_DAYS = 14;
 
 // Notes affichées aux utilisateurs quand la COQUILLE elle-même est mise à jour.
 export const EXTENSION_NOTES = {
+  '2.0.0': [
+    'Extension « socle stable » : les nouvelles fonctionnalités arrivent toutes par mise à jour automatique depuis GitHub.',
+    'Avec la mise à jour automatique activée (dossier maj), l\'extension elle-même se met aussi à jour seule.',
+  ],
   '1.4.0': ['L\'extension ne fonctionne que si sa publication GitHub répond : sinon elle se désactive et l\'indique (pastille OFF, message dans MEG).'],
   '1.3.0': ['Pastille « MAJ » sur l\'icône et message dans la fenêtre de l\'extension quand une nouvelle version est disponible.'],
   '1.2.0': ['Nouvelle icône « MEG ».'],

@@ -18,7 +18,41 @@ import { DEFAULTS, FALLBACK_SETTINGS, LICENCE_GRACE_DAYS, EXTENSION_NOTES } from
 
 const EXT_VERSION = chrome.runtime.getManifest().version;
 const ALARM = 'atm-update-check';
-const APP_MATCHES = ['https://mon-expert-en-gestion.fr/*'];
+// Sites où l'extension agit : publiés dans manifest.json (appMatches = @match des modules +
+// publish.json defaultMatches). MEG par défaut tant que rien n'est publié.
+const DEFAULT_MATCHES = ['https://mon-expert-en-gestion.fr/*'];
+function appMatches(manifest) {
+  const m = manifest && Array.isArray(manifest.appMatches) && manifest.appMatches.length ? manifest.appMatches : null;
+  if (m) return m;
+  const set = new Set(DEFAULT_MATCHES);
+  for (const sc of (manifest && manifest.scripts) || []) (sc.matches || []).forEach((x) => set.add(x));
+  return [...set];
+}
+// Motif de correspondance Chrome (https://*.domaine.fr/*) → RegExp.
+function matchPatternToRe(p) {
+  const m = /^(\*|https?):\/\/([^/]+)(\/.*)$/.exec(p);
+  if (!m) return null;
+  const scheme = m[1] === '*' ? 'https?' : m[1];
+  const host = m[2] === '*' ? '[^/]+' : m[2].replace(/\./g, '\\.').replace(/^\*\\\./, '(?:[^/]+\\.)?');
+  const path = m[3].replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+  return new RegExp('^' + scheme + ':\\/\\/' + host + path + '$');
+}
+function urlMatches(url, patterns) {
+  return patterns.some((p) => {
+    const re = matchPatternToRe(p);
+    return re && re.test(url);
+  });
+}
+// Réglages pilotés depuis la publication (publish.json → config) : aucun besoin de
+// mettre la coquille à jour pour les changer.
+function remoteConfig(manifest) {
+  const c = (manifest && manifest.config) || {};
+  return {
+    checkIntervalMin: Math.max(5, Number(c.checkIntervalMin) || 30),
+    pageCheckMinutes: Math.max(1, Number(c.pageCheckMinutes) || 5),
+    offlineGraceMinutes: Math.max(0, Number(c.offlineGraceMinutes) || 0),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Configuration / état
@@ -238,6 +272,7 @@ async function doCheckForUpdates(reason) {
   try {
     manifest = JSON.parse(await fetchText(base + 'manifest.json'));
     step = 'modules';
+    await patchState({ lastOkAt: Date.now() });
     if (!manifest || !Array.isArray(manifest.scripts) || !manifest.runtime) {
       throw new Error('manifest.json invalide');
     }
@@ -284,6 +319,11 @@ async function doCheckForUpdates(reason) {
     error = String(e.message || e);
     if (step === 'manifest') {
       publication = e && e.status === 404 ? 'removed' : 'unreachable';
+      // Tolérance hors ligne (publish.json → config.offlineGraceMinutes, 0 par défaut).
+      const grace = remoteConfig(state.manifest).offlineGraceMinutes * 60e3;
+      if (publication === 'unreachable' && grace && state.lastOkAt && Date.now() - state.lastOkAt < grace) {
+        publication = 'ok';
+      }
       if (publication === 'removed') {
         // Publication supprimée : on efface aussi le code gardé en cache.
         const all = await chrome.storage.local.get(null);
@@ -313,6 +353,7 @@ async function doCheckForUpdates(reason) {
   if (changed || licenceChanged || publicationChanged || nothingRegistered || reason !== 'alarm') {
     await applyRegistrations();
   }
+  if (remoteConfig(manifest).checkIntervalMin !== remoteConfig(state.manifest).checkIntervalMin) await scheduleAlarm();
   await refreshBadge();
   return error ? { ok: false, error, licence: licence.status } : { ok: true, changed, build: manifest.build, licence: licence.status };
 }
@@ -380,6 +421,21 @@ function publicationBannerCode(message) {
 })();`;
 }
 
+// Pont page ⇄ extension sur tous les sites publiés (en plus de MEG, déclaré dans le
+// manifest de l'extension). Un nouveau site = une ligne @match dans un module, sans
+// toucher à la coquille. bridge.js se protège contre un double chargement.
+async function registerBridge(manifest) {
+  try {
+    const matches = appMatches(manifest);
+    const existing = await chrome.scripting.getRegisteredContentScripts({ ids: ['atm-bridge'] });
+    const def = { id: 'atm-bridge', matches, js: ['bridge.js'], runAt: 'document_start', allFrames: false, world: 'ISOLATED' };
+    if (existing.length) await chrome.scripting.updateContentScripts([def]);
+    else await chrome.scripting.registerContentScripts([def]);
+  } catch (e) {
+    console.warn('[Atelier] pont non enregistré', e);
+  }
+}
+
 async function applyRegistrations() {
   if (!userScriptsAvailable()) {
     await refreshBadge();
@@ -388,11 +444,12 @@ async function applyRegistrations() {
   const cfg = await getConfig();
   const { manifest, licence, publication } = await getState();
   await chrome.userScripts.unregister(); // repart de zéro (idempotent)
+  await registerBridge(manifest);
   if (publication && publication !== 'ok') {
     await chrome.userScripts.register([
       {
         id: 'atm-publication',
-        matches: APP_MATCHES,
+        matches: appMatches(manifest),
         runAt: 'document_idle',
         world: 'MAIN',
         allFrames: false,
@@ -406,7 +463,7 @@ async function applyRegistrations() {
   if (!licenceOk(licence)) {
     const msg = LICENCE_MESSAGES[(licence && licence.status) || 'missing'] || LICENCE_MESSAGES.missing;
     await chrome.userScripts.register([
-      { id: 'atm-licence', matches: APP_MATCHES, runAt: 'document_idle', world: 'MAIN', allFrames: false, js: [{ code: licenceBannerCode(msg) }] },
+      { id: 'atm-licence', matches: appMatches(manifest), runAt: 'document_idle', world: 'MAIN', allFrames: false, js: [{ code: licenceBannerCode(msg) }] },
     ]);
     return { ok: true, count: 0, licence: licence && licence.status };
   }
@@ -486,11 +543,11 @@ async function refreshBadge() {
 }
 
 async function scheduleAlarm() {
-  const cfg = await getConfig();
+  const { manifest } = await getState();
   await chrome.alarms.clear(ALARM);
   await chrome.alarms.create(ALARM, {
     delayInMinutes: 1,
-    periodInMinutes: Math.max(5, Number(cfg.checkIntervalMin) || 30),
+    periodInMinutes: remoteConfig(manifest).checkIntervalMin,
   });
 }
 
@@ -505,21 +562,29 @@ function hostAllowed(hostname, hosts) {
   return false;
 }
 
-async function proxyHttp({ url, method = 'GET', headers, body, responseType = 'text' }) {
+// responseType : 'text' | 'json' | 'base64' (binaire). credentials : 'omit' (défaut) | 'include'.
+async function proxyHttp({ url, method = 'GET', headers, body, responseType = 'text', credentials = 'omit' }) {
   const u = new URL(url);
   if (u.protocol !== 'https:') throw new Error('Seul https est autorisé');
   const { manifest } = await getState();
   if (!hostAllowed(u.hostname, new Set((manifest && manifest.connect) || []))) {
     throw new Error(`Hôte non autorisé : ${u.hostname} (ajouter @connect dans le module)`);
   }
-  const res = await fetch(url, { method, headers, body, credentials: 'omit' });
+  const res = await fetch(url, { method, headers, body, credentials: credentials === 'include' ? 'include' : 'omit' });
   const out = {
     status: res.status,
     statusText: res.statusText,
     finalUrl: res.url,
     headers: Object.fromEntries(res.headers.entries()),
   };
-  out.body = responseType === 'json' ? await res.json() : await res.text();
+  if (responseType === 'base64') {
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    out.body = btoa(bin);
+  } else {
+    out.body = responseType === 'json' ? await res.json() : await res.text();
+  }
   return out;
 }
 
@@ -556,7 +621,7 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
 });
 
 async function downloadFile({ url, filename, conflictAction = 'uniquify' }) {
-  if (!/^data:/.test(String(url))) throw new Error('Seules les données (data:) sont acceptées');
+  if (!/^(data:|https:\/\/)/.test(String(url))) throw new Error('URL de téléchargement refusée (data: ou https: uniquement)');
   const name = cleanPath(filename);
   if (!name) throw new Error('Nom de fichier vide');
   pendingNames.set(url, { filename: name, conflictAction });
@@ -604,7 +669,41 @@ async function storeSet(key, value) {
   return true;
 }
 
+// API Chrome utilisables par les modules sans modifier la coquille : ATM.chrome('downloads.show', id), etc.
+const CHROME_API = new Set([
+  'downloads.search',
+  'downloads.show',
+  'downloads.showDefaultFolder',
+  'downloads.open',
+  'downloads.erase',
+  'downloads.cancel',
+  'tabs.create',
+  'tabs.query',
+  'tabs.reload',
+  'tabs.update',
+  'tabs.remove',
+  'windows.create',
+  'windows.update',
+  'notifications.create',
+  'notifications.clear',
+]);
+async function chromeApi({ api, args = [] }, sender) {
+  if (!CHROME_API.has(api)) throw new Error('API Chrome non autorisée : ' + api);
+  const [ns, fn] = api.split('.');
+  const target = chrome[ns];
+  if (!target || typeof target[fn] !== 'function') throw new Error('API Chrome indisponible : ' + api);
+  // « tabs.reload/update/remove » sans identifiant = l'onglet du module.
+  if (/^tabs\.(reload|update|remove)$/.test(api) && typeof args[0] !== 'number' && sender.tab) args = [sender.tab.id, ...args];
+  if (api === 'notifications.create' && args.length === 1) args = ['', args[0]];
+  if (api === 'notifications.create') {
+    args[1] = { type: 'basic', iconUrl: 'icons/icon128.png', title: 'Atelier MEG', message: '', ...args[1] };
+  }
+  return await target[fn](...args);
+}
+
 const PAGE_HANDLERS = {
+  chrome: chromeApi,
+  info: async () => ({ extVersion: EXT_VERSION, capabilities: [...CHROME_API, 'http', 'download', 'store', 'notices'] }),
   http: proxyHttp,
   'store-get': ({ key }) => storeGet(key),
   'store-set': ({ key, value }) => storeSet(key, value),
@@ -690,7 +789,7 @@ async function handlePopup(msg) {
       return checkForUpdates('manual', { fresh: true });
     }
     case 'reload-tabs': {
-      const tabs = await chrome.tabs.query({ url: APP_MATCHES });
+      const tabs = await chrome.tabs.query({ url: appMatches((await getState()).manifest) });
       await Promise.all(tabs.map((t) => chrome.tabs.reload(t.id)));
       return { count: tabs.length };
     }
@@ -728,13 +827,37 @@ chrome.runtime.onStartup.addListener(async () => {
 
 // Vérification aussi à l'ouverture d'une page MEG (au plus toutes les 5 min) : une
 // publication supprimée ou injoignable désactive l'extension sans attendre l'alarme.
-const APP_URL_RE = /^https:\/\/mon-expert-en-gestion\.fr\//;
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status !== 'loading' || !APP_URL_RE.test(tab.url || changeInfo.url || '')) return;
-  const { lastCheck = 0 } = await getState();
-  if (Date.now() - lastCheck > 5 * 60e3) checkForUpdates('page');
+  if (changeInfo.status !== 'loading') return;
+  const url = tab.url || changeInfo.url || '';
+  const { lastCheck = 0, manifest } = await getState();
+  if (!urlMatches(url, appMatches(manifest))) return;
+  if (Date.now() - lastCheck > remoteConfig(manifest).pageCheckMinutes * 60e3) {
+    checkForUpdates('page');
+    reloadIfUpdatedOnDisk();
+  }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM) checkForUpdates('alarm');
+  if (alarm.name === ALARM) {
+    checkForUpdates('alarm');
+    reloadIfUpdatedOnDisk();
+  }
 });
+
+// Mise à jour de la coquille sans intervention : quand les fichiers de l'extension ont été
+// remplacés sur le disque (script maj/ de mise à jour automatique, ou zip extrait à la main),
+// l'extension se recharge d'elle-même — plus besoin de cliquer ↻ dans chrome://extensions.
+async function reloadIfUpdatedOnDisk() {
+  try {
+    const res = await fetch(chrome.runtime.getURL('manifest.json') + '?t=' + Date.now(), { cache: 'no-store' });
+    const onDisk = (await res.json()).version;
+    if (compareVersions(onDisk, EXT_VERSION) > 0) {
+      console.log('[Atelier] nouvelle version sur le disque', onDisk, '→ rechargement');
+      chrome.runtime.reload();
+    }
+  } catch (e) {
+    /* manifest illisible pendant l'écriture des fichiers : on réessaiera */
+  }
+}
+reloadIfUpdatedOnDisk();

@@ -17,6 +17,8 @@
 //   ATM.diag(texte)             → télécharge diag-N.txt (ex-IPC 'tmbc-diag' d'Electron)
 //   ATM.download(dataUrl, chemin) → enregistre un fichier dans Téléchargements/<chemin>
 //                                 (attend la fin du téléchargement ; suffixe (1) si le nom existe)
+//   ATM.chrome('downloads.show', id) → API Chrome autorisées par la coquille (downloads.*, tabs.*, notifications.*,
+//                                 windows.*) — liste : ATM.info()
 //   ATM.log(...)                → console.log préfixé
 
 (function () {
@@ -100,6 +102,8 @@
     onReady,
     setZoom: (factor) => call('set-zoom', { factor }),
     download: (url, filename, conflictAction) => call('download', { url, filename, conflictAction }),
+    chrome: (api, ...args) => call('chrome', { api, args }),
+    info: () => call('info'),
     diag: (text) => {
       // Fichier texte téléchargé dans le dossier Téléchargements (Electron
       // l'écrivait à côté de main.js, avec une capture d'écran en plus).

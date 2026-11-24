@@ -106,15 +106,25 @@ async function render() {
     warnExt.textContent =
       `Les modules publiés demandent l'extension ${m.minExtensionVersion} ou plus (vous avez ${st.extVersion}). ` +
       `Téléchargez la nouvelle version (${new URL('atelier-meg-extension.zip', cfg.baseUrl)}), ` +
-      `extrayez-la par-dessus le dossier de l'extension puis cliquez sur ↻ dans chrome://extensions.`;
+      `extrayez-la par-dessus le dossier de l'extension : elle se recharge d'elle-même. ` +
+      `Pour ne plus avoir à le faire : double-cliquez une fois sur maj\\activer-maj-auto.cmd dans le dossier de l'extension.`;
   } else if (m && cmp(m.latestExtensionVersion, st.extVersion) > 0) {
     warnExt.hidden = false;
     warnExt.textContent =
       `Nouvelle version de l'extension disponible : ${m.latestExtensionVersion} (vous avez ${st.extVersion}). ` +
       `Téléchargez-la (${new URL('atelier-meg-extension.zip', cfg.baseUrl)}), ` +
-      `extrayez-la par-dessus le dossier de l'extension puis cliquez sur ↻ dans chrome://extensions.`;
+      `extrayez-la par-dessus le dossier de l'extension : elle se recharge d'elle-même. ` +
+      `Avec la mise à jour automatique activée (maj\\activer-maj-auto.cmd), elle s'installera seule.`;
   } else {
     warnExt.hidden = true;
+  }
+
+  const ann = $('announcement');
+  const a = m && m.announcement;
+  ann.hidden = !(a && a.text);
+  if (a && a.text) {
+    ann.className = 'alert small ' + (a.level === 'danger' || a.level === 'warning' ? a.level : 'info');
+    ann.textContent = a.text;
   }
 
   const err = $('error');

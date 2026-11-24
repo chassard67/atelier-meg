@@ -116,6 +116,10 @@ export function build({ zip = false } = {}) {
     connect: [...connect].sort(),
     runtime: { file: RUNTIME, sha256: sha256(runtimeSrc) },
     licenceRequired: publishCfg.licenceRequired !== false,
+    // Lus par la coquille 2.x : sites où injecter le pont et les modules, réglages distants, annonce.
+    appMatches: [...new Set([...(publishCfg.defaultMatches || []), ...scripts.flatMap((x) => x.matches)])],
+    config: publishCfg.config || {},
+    announcement: publishCfg.announcement || null,
     release: publishCfg.release || null,
     dependencies: publishCfg.dependencies || {},
     catalog: publishCfg.catalog || [],
@@ -169,7 +173,7 @@ td{padding:4px 12px;border-bottom:1px solid #eee}code{font-family:Consolas,monos
 
   if (zip) {
     const out = path.join(DIST, 'atelier-meg-extension.zip');
-    execSync(`cd "${path.join(ROOT, 'extension')}" && zip -qr "${out}" . -x ".*"`);
+    execSync(`cd "${path.join(ROOT, 'extension')}" && zip -qr "${out}" . -x ".*" -x "maj/maj.log"`);
   }
 
   manifest.missing = missing;

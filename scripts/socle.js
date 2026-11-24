@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         Socle Atelier (diagnostic + notes de mise à jour)
 // @namespace    https://nicolas.chassard/meg
-// @version      1.1.0
-// @description  v1.1.0 (2026-11-24) : bandeau « nouvelle version de l'extension disponible » si la coquille installée
+// @version      1.2.0
+// @description  v1.2.0 (2026-11-24) : texte du bandeau adapté à la mise à jour automatique de l'extension.
+//               v1.1.0 (2026-11-24) : bandeau « nouvelle version de l'extension disponible » si la coquille installée
 //               n'est pas la dernière publiée (lien vers le zip + marche à suivre).
 //               v1.0.0 (2026-11-24) : versions dans la console + fenêtre « mise à jour activée » (une fois par mise à jour).
 // @author       Nicolas
@@ -100,7 +101,7 @@
       )
     );
     txt.appendChild(
-      el('span', null, 'Téléchargez le zip, extrayez-le par-dessus le dossier de l\'extension, puis ↻ sur la carte Atelier MEG dans chrome://extensions et rechargez MEG.')
+      el('span', null, 'Elle s\'installe seule si la mise à jour automatique est activée (double-clic une fois sur maj\\activer-maj-auto.cmd dans le dossier de l\'extension). Sinon : téléchargez le zip, extrayez-le par-dessus le dossier de l\'extension, puis rechargez MEG.')
     );
     const dl = el('a', 'flex:none;background:#fff;color:#111827;border-radius:6px;padding:6px 12px;font-weight:600;text-decoration:none', 'Télécharger le zip');
     dl.href = PUB + 'atelier-meg-extension.zip';

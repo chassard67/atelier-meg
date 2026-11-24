@@ -10,6 +10,9 @@
 // existent, et les requêtes réseau ne partent que vers les hôtes @connect.
 
 (() => {
+  // Chargé par le manifest (MEG) ET par l'enregistrement dynamique (autres sites) : une seule fois.
+  if (globalThis.__atmBridgeLoaded) return;
+  globalThis.__atmBridgeLoaded = true;
   const CH = '__atm_bridge_v1';
 
   window.addEventListener('message', (event) => {

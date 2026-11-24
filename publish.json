@@ -1,16 +1,18 @@
 {
-  "minExtensionVersion": "1.4.0",
+  "minExtensionVersion": "2.0.0",
+  "config": {
+    "checkIntervalMin": 30,
+    "pageCheckMinutes": 5,
+    "offlineGraceMinutes": 0
+  },
+  "announcement": null,
   "licenceRequired": false,
   "release": {
-    "version": "1.4.1",
+    "version": "2.0.0",
     "date": "2026-11-24",
     "notes": [
-      "Extension 1.4.0 obligatoire : Atelier MEG ne fonctionne que si sa publication GitHub répond (sinon désactivation + message).",
-      "Achats (affichage LGA) : nouvelle colonne « Téléchargé par » — qui a passé la facture en Téléchargé, date et heure au survol.",
-      "Un bandeau dans MEG signale quand une nouvelle version de l'extension est disponible (pastille « MAJ » sur l'icône à partir de l'extension 1.3.0).",
-      "Achats : « Affichage personnalisé LGA » (page épurée : colonnes, boutons, cartes et filtres inutiles masqués) ; bouton « Affichage classique » pour revenir au MEG d'origine.",
-      "Achats : en LGA, « Télécharger la sélection » remplace la suppression dans le bandeau de sélection ; le bouton du haut télécharge toutes les factures non téléchargées.",
-      "Nouvelle icône « MEG » pour l'extension (zip 1.2.0)."
+      "Extension 2.0.0 : dernière installation manuelle. Ensuite, tout se met à jour depuis GitHub.",
+      "Pour que l'extension elle-même se mette aussi à jour seule : double-clic une fois sur maj\activer-maj-auto.cmd dans le dossier de l'extension."
     ]
   },
   "defaultMatches": [
