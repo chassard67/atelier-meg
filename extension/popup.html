@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Atelier MEG</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon32.png" alt="">
+    <div>
+      <h1>Atelier MEG</h1>
+      <div class="sub" id="versions">…</div>
+    </div>
+  </header>
+
+  <div class="row gap top-actions">
+    <button id="check" class="primary">Vérifier les mises à jour</button>
+    <button id="reload-tabs">Recharger les onglets MEG</button>
+  </div>
+
+  <section id="warn-userscripts" class="alert danger" hidden>
+    <strong>Une étape manque pour activer les modules.</strong>
+    <ol id="warn-steps"></ol>
+    <button id="open-ext-page" class="primary">Ouvrir la page de l'extension</button>
+  </section>
+
+  <section id="licence-box" hidden>
+    <h2>Licence</h2>
+    <div id="licence-status" class="alert small"></div>
+    <label class="field">Clé de licence
+      <input type="text" id="licence-key" spellcheck="false" placeholder="ATM-XXXX-XXXX-XXXX">
+    </label>
+    <button id="save-licence" class="primary">Valider la clé</button>
+  </section>
+
+  <section id="warn-ext" class="alert warning" hidden></section>
+
+  <section id="warn-source" class="alert warning small" hidden>
+    Les modules sont lus depuis une source non officielle : <code id="warn-source-url"></code>.
+    <button id="fix-source" class="primary">Revenir à la source officielle</button>
+  </section>
+
+  <section>
+    <div class="row between">
+      <h2>Fonctionnalités</h2>
+      <span class="muted" id="last-check"></span>
+    </div>
+    <div id="catalog"><p class="muted">Aucun module téléchargé pour l'instant.</p></div>
+    <div id="error" class="alert danger small" hidden></div>
+    <div id="reload-hint" class="alert info small" hidden>
+      Modifications enregistrées. Rechargez vos onglets MEG pour les appliquer.
+    </div>
+  </section>
+
+  <details>
+    <summary>Avancé</summary>
+    <p class="small"><span class="muted">Licence :</span> <span id="licence-mini"></span>
+      <a href="#" id="change-licence">modifier</a></p>
+    <label class="field">Source des modules
+      <input type="url" id="base-url" spellcheck="false">
+    </label>
+    <div class="row gap">
+      <button id="save-base-url">Enregistrer</button>
+      <button id="use-official">Source officielle</button>
+      <button id="use-dev" title="Pour le développeur uniquement : nécessite node tools/serve.mjs sur ce PC">Dev local</button>
+      <button id="reset-defaults">Réglages par défaut</button>
+    </div>
+    <p class="muted small" id="ext-id"></p>
+  </details>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

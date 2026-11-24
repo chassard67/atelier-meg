@@ -1,0 +1,36 @@
+{
+  "minExtensionVersion": "1.0.0",
+  "licenceRequired": false,
+  "release": {
+    "version": "1.0.0",
+    "date": "2026-11-24",
+    "notes": [
+      "Achats simplifiés : bouton « Télécharger les factures » — télécharge les PDF des factures non réglées, puis les passe en Réglé (mode Téléchargé)."
+    ]
+  },
+  "defaultMatches": [
+    "https://mon-expert-en-gestion.fr/*"
+  ],
+  "order": [
+    "socle",
+    "achats-telechargement"
+  ],
+  "required": [
+    "socle"
+  ],
+  "dependencies": {},
+  "catalog": [
+    {
+      "group": "Achats",
+      "items": [
+        {
+          "type": "module",
+          "id": "achats-telechargement",
+          "label": "Téléchargement en lot des factures (Achats simplifiés)",
+          "default": true
+        }
+      ]
+    }
+  ],
+  "connect": []
+}
