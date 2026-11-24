@@ -27,6 +27,7 @@ export const LICENCE_GRACE_DAYS = 14;
 
 // Notes affichées aux utilisateurs quand la COQUILLE elle-même est mise à jour.
 export const EXTENSION_NOTES = {
+  '1.2.0': ['Nouvelle icône « MEG ».'],
   '1.1.0': ['Les factures téléchargées portent bien le nom « Fournisseur - JJ-MM-AAAA - N°.pdf », dans le sous-dossier de la société.'],
   '1.0.0': ['Première version de l\'extension Atelier MEG.'],
 };

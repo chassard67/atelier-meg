@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Achats : téléchargement en lot des factures
 // @namespace    https://nicolas.chassard/meg
-// @version      1.2.0
-// @description  v1.2.0 (2026-11-24) : libellés « Non téléchargé / Téléchargé », onglets « À télécharger / Téléchargé »,
+// @version      1.3.0
+// @description  v1.3.0 (2026-11-24) : « Affichage personnalisé LGA » (page Achats épurée) / « Affichage classique » (MEG
+//               d'origine) ; « Télécharger la sélection » dans le bandeau de sélection.
+//               v1.2.0 (2026-11-24) : libellés « Non téléchargé / Téléchargé », onglets « À télécharger / Téléchargé »,
 //               onglets « À traiter » et « À affecter » masqués ; bouton ✕ sur l'aperçu ; nom de fichier contrôlé.
 //               v1.1.0 (2026-11-24) : aperçu du PDF au survol du nom de fichier ; seules les factures cochées sont
 //               traitées s'il y en a ; création automatique du mode « Téléchargé » s'il manque (avec confirmation).
@@ -16,6 +18,12 @@
 // ==/UserScript==
 
 // CHANGELOG
+// 1.3.0 (2026-11-24) — bascule « Affichage personnalisé LGA » / « Affichage classique » (mémorisée dans ce Chrome,
+//                      LGA par défaut). LGA : colonnes Affectation, Liaison bancaire, Compte comptable, Source et
+//                      Date d'import masquées ; boutons Exporter, Importer et ⋮ masqués ; cartes « Factures à régler »
+//                      et « Suivi des règlements » masquées ; seul le filtre Rechercher reste (les autres filtres sont
+//                      vidés en passant en LGA) ; bandeau de sélection : « Télécharger la sélection » à la place de
+//                      la suppression ; bouton du haut = toutes les factures non téléchargées. Classique = MEG d'origine.
 // 1.2.0 (2026-11-24) — statuts renommés (Non réglé → Non téléchargé, Réglé → Téléchargé), onglets renommés
 //                      (À régler → À télécharger, Réglé → Téléchargé), onglets À traiter / À affecter masqués ;
 //                      bouton ✕ pour fermer l'aperçu ; la facture n'est passée en réglé que si le fichier porte le bon nom
@@ -328,10 +336,11 @@
   // ---------------------------------------------------------------------------
   let running = false;
 
-  async function run() {
+  async function run({ selection: parSelection = false } = {}) {
     if (running) return;
-    // Factures cochées : seules celles-là sont traitées (lues AVANT d'afficher la fenêtre).
-    const coches = selectedRows();
+    // Factures cochées (bandeau de sélection) : seules celles-là sont traitées (lues AVANT d'afficher la fenêtre).
+    const coches = parSelection ? selectedRows() : [];
+    if (parSelection && !coches.length) return;
     const selection = coches.map(achatOfRow);
     running = true;
     const ui = panel();
@@ -443,43 +452,154 @@
     return [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Importer');
   }
 
-  function refreshLabel() {
-    const b = document.getElementById(BTN_ID);
-    if (!b) return;
-    const n = selectedRows().length;
-    const label = n ? `⬇ Télécharger la sélection (${n})` : '⬇ Télécharger les factures';
-    if (b.textContent !== label) b.textContent = label;
-    b.title = n
-      ? `Télécharge les ${n} facture(s) cochée(s) dans Téléchargements\\<Société>, puis les passe en Réglé (mode Téléchargé)`
-      : 'Aucune case cochée : télécharge toutes les factures non réglées dans Téléchargements\\<Société>, puis les passe en Réglé (mode Téléchargé)';
-  }
+  const btnStyle = (h) =>
+    'display:inline-flex;align-items:center;gap:6px;background:#fff;color:#5b45f5;border:1px solid #5b45f5;' +
+    'border-radius:6px;padding:0 12px;height:' + (h || 32) + 'px;font:600 13px system-ui,Segoe UI,Arial;cursor:pointer;white-space:nowrap';
 
   function ensureButton() {
-    const onPage = PAGE_RE.test(location.pathname);
     const existing = document.getElementById(BTN_ID);
-    if (!onPage) {
+    if (!isLga()) {
       if (existing) existing.remove();
       hidePreview(true);
       return;
     }
-    if (existing) return refreshLabel();
+    if (existing) return;
     const importer = findImporter();
     if (!importer || !importer.parentElement) return;
-    const b = el(
-      'button',
-      'display:inline-flex;align-items:center;gap:6px;margin-right:8px;background:#fff;color:#5b45f5;border:1px solid #5b45f5;' +
-        'border-radius:6px;padding:0 12px;height:' + (importer.offsetHeight || 32) + 'px;font:600 13px system-ui,Segoe UI,Arial;cursor:pointer;white-space:nowrap',
-      '⬇ Télécharger les factures'
-    );
+    const b = el('button', btnStyle(importer.offsetHeight) + ';margin-right:8px', '⬇ Télécharger les factures');
     b.id = BTN_ID;
     b.type = 'button';
+    b.title = 'Télécharge toutes les factures non téléchargées dans Téléchargements\\<Société>, puis les passe en Téléchargé';
     b.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       run();
     });
     importer.parentElement.insertBefore(b, importer);
-    refreshLabel();
+  }
+
+  // Bandeau « n éléments sélectionnés » de MEG : la suppression est masquée (CSS),
+  // on y met « Télécharger la sélection ».
+  const MASS_BTN_ID = 'atm-mass-dl';
+  function ensureMassButton() {
+    if (!isLga()) return;
+    const zone = document.getElementById('mass-action-buttons');
+    if (!zone) return;
+    let b = document.getElementById(MASS_BTN_ID);
+    if (!b) {
+      b = el('button', btnStyle(30) + ';border-color:#fff');
+      b.id = MASS_BTN_ID;
+      b.type = 'button';
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        run({ selection: true });
+      });
+      zone.appendChild(b);
+    }
+    const n = selectedRows().length;
+    const label = `⬇ Télécharger la sélection (${n})`;
+    if (b.textContent !== label) b.textContent = label;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Affichage personnalisé LGA / affichage classique
+  // ---------------------------------------------------------------------------
+  const MODE_KEY = 'atm-meg-affichage';
+  const TOGGLE_ID = 'atm-affichage-toggle';
+  const STYLE_ID = 'atm-lga-style';
+  // Paramètres d'URL conservés en LGA (les filtres masqués sont dans l'URL : etat=…, etc.).
+  const URL_PARAMS_OK = /^(onglet|id|recherche.*)$/i;
+  function modeLga() {
+    try {
+      return localStorage.getItem(MODE_KEY) !== 'classique';
+    } catch (e) {
+      return true;
+    }
+  }
+  const onPage = () => PAGE_RE.test(location.pathname);
+  const isLga = () => onPage() && modeLga();
+
+  const LGA_CSS = `
+html.atm-lga achat-achats [id$="bouton-export-excel"],
+html.atm-lga achat-achats [id$="bouton-import"],
+html.atm-lga achat-achats [id$="bouton-menu-actions"],
+html.atm-lga achat-statistiques-achats,
+html.atm-lga achat-barre-filtres form > div > mat-form-field:not(:has(input[formcontrolname="recherche"])),
+html.atm-lga achat-liste-achats .cdk-column-etatAffectation,
+html.atm-lga achat-liste-achats .cdk-column-liaisonBancaire,
+html.atm-lga achat-liste-achats .cdk-column-comptesComptables,
+html.atm-lga achat-liste-achats .cdk-column-sourceAffichee,
+html.atm-lga achat-liste-achats .cdk-column-dateAjout,
+html.atm-lga #mass-action-buttons > :not(#${MASS_BTN_ID}) { display: none !important; }
+`;
+
+  function filtresMasquesDansUrl() {
+    return [...new URLSearchParams(location.search).keys()].some((k) => !URL_PARAMS_OK.test(k));
+  }
+  function urlSansFiltresMasques() {
+    const q = new URLSearchParams(location.search);
+    for (const k of [...q.keys()]) if (!URL_PARAMS_OK.test(k)) q.delete(k);
+    const qs = q.toString();
+    return location.pathname + (qs ? '?' + qs : '') + location.hash;
+  }
+
+  function setMode(lga) {
+    try {
+      localStorage.setItem(MODE_KEY, lga ? 'lga' : 'classique');
+    } catch (e) {}
+    // Rechargement : l'affichage classique est le MEG d'origine, sans aucun reste de l'extension.
+    if (lga && filtresMasquesDansUrl()) location.replace(urlSansFiltresMasques());
+    else location.reload();
+  }
+
+  function applyMode() {
+    const lga = isLga();
+    document.documentElement.classList.toggle('atm-lga', lga);
+    if (lga && !document.getElementById(STYLE_ID)) {
+      const st = el('style');
+      st.id = STYLE_ID;
+      st.textContent = LGA_CSS;
+      (document.head || document.documentElement).appendChild(st);
+    }
+    // Arrivée sur la page en LGA avec des filtres masqués actifs (lien, historique…) : on les vide.
+    if (lga && filtresMasquesDansUrl()) {
+      history.replaceState(history.state, '', urlSansFiltresMasques());
+      location.reload();
+      return;
+    }
+    ensureToggle();
+  }
+
+  function ensureToggle() {
+    let box = document.getElementById(TOGGLE_ID);
+    if (!onPage()) {
+      if (box) box.remove();
+      return;
+    }
+    const h2 = document.querySelector('achat-achats h2');
+    if (!h2 || !h2.parentElement) return;
+    const lga = modeLga();
+    if (box && box.dataset.mode === (lga ? 'lga' : 'classique')) return;
+    if (box) box.remove();
+    box = el('div', 'display:flex;align-items:center;gap:10px;margin:0 auto 0 18px;font:13px system-ui,Segoe UI,Arial');
+    box.id = TOGGLE_ID;
+    box.dataset.mode = lga ? 'lga' : 'classique';
+    if (lga) {
+      box.appendChild(el('span', 'background:#ede9fe;color:#5b45f5;font-weight:600;border-radius:12px;padding:4px 12px', 'Affichage personnalisé LGA'));
+      const b = el('button', 'background:none;border:0;color:#6b7280;text-decoration:underline;cursor:pointer;font:inherit;padding:0', 'Affichage classique');
+      b.type = 'button';
+      b.title = 'Revenir à l\'affichage MEG d\'origine';
+      b.onclick = () => setMode(false);
+      box.appendChild(b);
+    } else {
+      const b = el('button', btnStyle(28), 'Affichage personnalisé LGA');
+      b.type = 'button';
+      b.title = 'Page Achats épurée : téléchargement des factures, aperçu au survol';
+      b.onclick = () => setMode(true);
+      box.appendChild(b);
+    }
+    h2.insertAdjacentElement('afterend', box);
   }
 
   // ---------------------------------------------------------------------------
@@ -583,7 +703,7 @@
 
   function installHover() {
     document.addEventListener('mouseover', (e) => {
-      if (!PAGE_RE.test(location.pathname)) return;
+      if (!isLga()) return;
       const td = e.target.closest && e.target.closest('td.cdk-column-nomFichier');
       if (!td) return;
       clearTimeout(hideTimer);
@@ -599,9 +719,9 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') hidePreview(true);
     });
-    // Cases à cocher : le libellé du bouton suit la sélection.
-    document.addEventListener('change', () => setTimeout(refreshLabel, 0), true);
-    document.addEventListener('click', () => setTimeout(refreshLabel, 50), true);
+    // Cases à cocher : le libellé du bouton du bandeau suit la sélection.
+    document.addEventListener('change', () => setTimeout(ensureMassButton, 0), true);
+    document.addEventListener('click', () => setTimeout(ensureMassButton, 50), true);
   }
 
   // ---------------------------------------------------------------------------
@@ -621,7 +741,7 @@
   }
 
   function relabel() {
-    if (!PAGE_RE.test(location.pathname)) return;
+    if (!isLga()) return;
     for (const c of document.querySelectorAll('rca-chips .chips-content')) {
       const t = c.textContent.trim();
       if (CHIP_LABELS[t]) setText(c, CHIP_LABELS[t] + ' ');
@@ -642,11 +762,21 @@
 
   ATM.onReady(() => {
     let t = null;
+    let lastPath = location.pathname;
     new MutationObserver(() => {
+      if (location.pathname !== lastPath) {
+        lastPath = location.pathname;
+        applyMode();
+      }
       relabel();
+      ensureMassButton();
       clearTimeout(t);
-      t = setTimeout(ensureButton, 150);
+      t = setTimeout(() => {
+        ensureToggle();
+        ensureButton();
+      }, 150);
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    applyMode();
     relabel();
     installHover();
     ensureButton();
