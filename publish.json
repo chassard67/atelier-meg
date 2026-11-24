@@ -8,10 +8,11 @@
   "announcement": null,
   "licenceRequired": false,
   "release": {
-    "version": "2.3.0",
+    "version": "2.4.0",
     "date": "2026-11-24",
     "notes": [
-      "Achats : un seul bouton Télécharger. À la fin du téléchargement, une fenêtre propose de fusionner toutes les factures en un PDF à imprimer ; les factures passent en Téléchargé à la fin (après confirmation de l'impression si vous imprimez)."
+      "Achats : s'il y a des factures cochées, seules celles-ci sont téléchargées, quel que soit le bouton.",
+      "Achats : bouton « ↩ Remettre en Non téléchargé » dans le bandeau de sélection, pour annuler un téléchargement fait par erreur."
     ]
   },
   "defaultMatches": [

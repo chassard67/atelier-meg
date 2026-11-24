@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Achats : téléchargement en lot des factures
 // @namespace    https://nicolas.chassard/meg
-// @version      1.7.0
-// @description  v1.7.0 (2026-11-24) : un seul bouton Télécharger ; à la fin, proposition de fusionner les factures en un
+// @version      1.8.0
+// @description  v1.8.0 (2026-11-24) : factures cochées = seules traitées, quel que soit le bouton ; bouton « Remettre en
+//               Non téléchargé » pour annuler un téléchargement fait par erreur.
+//               v1.7.0 (2026-11-24) : un seul bouton Télécharger ; à la fin, proposition de fusionner les factures en un
 //               PDF à imprimer. Passage en Téléchargé à la fin (après impression confirmée si on imprime).
 //               v1.6.1 (2026-11-24) : CORRECTIF boucle de rechargement à la reconnexion (paramètres code/state).
 //               v1.6.0 (2026-11-24) : « Télécharger et imprimer » ne passe les factures en Téléchargé qu'une fois tout
@@ -26,6 +28,11 @@
 // ==/UserScript==
 
 // CHANGELOG
+// 1.8.0 (2026-11-24) — s'il y a des factures cochées, SEULES celles-ci sont traitées, que l'on clique le bouton du haut
+//                      ou celui du bandeau (le bouton du haut affiche alors « Télécharger la sélection (n) »).
+//                      Bandeau de sélection : « ↩ Remettre en Non téléchargé (n) » — remet « En attente » les échéances
+//                      réglées en mode Téléchargé (TELECHARGE) des factures cochées, après confirmation ; une facture
+//                      réglée par un autre mode (vrai paiement) n'est jamais touchée.
 // 1.7.0 (2026-11-24) — boutons « Télécharger et imprimer » supprimés : un seul bouton (en haut : toutes ; bandeau : la
 //                      sélection). Les PDF sont d'abord tous téléchargés (statut inchangé), puis une question propose de
 //                      fusionner les factures en un PDF à imprimer. « Non » → passage en Téléchargé ; « Oui » → fusion,
@@ -66,6 +73,7 @@
 //   GET  …/{id}/telecharger-document                                         → application/pdf
 //   GET  /ac/rest/achats-simplifies/modes-reglement                          → [{ id, code, libelle }]
 //   POST …/{id}/modifier-echeances   body = [échéances]                      → achat mis à jour
+//        (remise « En attente » : même échéance avec statutPaiement "EN_ATTENTE" et sans « reglement »)
 //        (lien HATEOAS _links['modifier-achat-echeances'] du détail ; '-' = interdit)
 //   GET  /ac/rest/commun/utilisateur?withCompanies=true                      → listeEntreprises [{ id, name }]
 //   POST /portail/rest/parametres/listes/reglement/update  body = { ordre, finMois, code, libelle, delai, compteComptable,
@@ -296,10 +304,10 @@
     return e;
   }
 
-  function panel() {
+  function panel(titre = 'Téléchargement des factures d\'achat') {
     const overlay = el('div', 'position:fixed;inset:0;z-index:2147483640;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif');
     const box = el('div', 'background:#fff;border-radius:10px;width:min(760px,94vw);max-height:84vh;display:flex;flex-direction:column;box-shadow:0 18px 50px rgba(0,0,0,.35)');
-    const head = el('div', 'background:#5b45f5;color:#fff;padding:12px 18px;border-radius:10px 10px 0 0;font-weight:600;font-size:15px', 'Téléchargement des factures d\'achat');
+    const head = el('div', 'background:#5b45f5;color:#fff;padding:12px 18px;border-radius:10px 10px 0 0;font-weight:600;font-size:15px', titre);
     const status = el('div', 'padding:10px 18px 4px;font-weight:600;color:#111827', 'Préparation…');
     const barWrap = el('div', 'margin:4px 18px 8px;height:6px;background:#eef2ff;border-radius:3px;overflow:hidden');
     const bar = el('div', 'height:100%;width:0;background:#5b45f5;transition:width .2s');
@@ -374,7 +382,8 @@
   async function run({ selection: parSelection = false } = {}) {
     if (running) return;
     // Factures cochées (bandeau de sélection) : seules celles-là sont traitées (lues AVANT d'afficher la fenêtre).
-    const coches = parSelection ? selectedRows() : [];
+    // Des factures cochées ? Seules celles-ci, quel que soit le bouton utilisé.
+    const coches = selectedRows();
     if (parSelection && !coches.length) return;
     const selection = coches.map(achatOfRow);
     running = true;
@@ -615,7 +624,7 @@
     const b = el('button', btnStyle(importer.offsetHeight) + ';margin-right:8px', '⬇ Télécharger les factures');
     b.id = BTN_ID;
     b.type = 'button';
-    b.title = 'Télécharge toutes les factures non téléchargées dans Téléchargements\\<Société>, puis les passe en Téléchargé';
+    b.title = 'Sans case cochée : toutes les factures non téléchargées. Avec des cases cochées : seulement celles-ci.';
     b.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -643,9 +652,107 @@
       });
       zone.appendChild(b);
     }
+    let r = document.getElementById(MASS_BTN_ID + '-annuler');
+    if (!r) {
+      r = el('button', btnStyle(30) + ';border-color:#fff;color:#b45309;margin-left:8px');
+      r.id = MASS_BTN_ID + '-annuler';
+      r.type = 'button';
+      r.title = 'Remet en « Non téléchargé » les factures cochées passées en Téléchargé par erreur';
+      r.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        remettreNonTelecharge();
+      });
+      zone.appendChild(r);
+    }
     const n = selectedRows().length;
     const label = `⬇ Télécharger la sélection (${n})`;
     if (b.textContent !== label) b.textContent = label;
+    const labelR = `↩ Remettre en Non téléchargé (${n})`;
+    if (r.textContent !== labelR) r.textContent = labelR;
+  }
+
+  // Bouton du haut : son libellé suit la sélection (les cochées sont seules traitées).
+  function refreshTopLabel() {
+    const b = document.getElementById(BTN_ID);
+    if (!b) return;
+    const n = isLga() ? selectedRows().length : 0;
+    const label = n ? `⬇ Télécharger la sélection (${n})` : '⬇ Télécharger les factures';
+    if (b.textContent !== label) b.textContent = label;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Remettre en « Non téléchargé » (annulation d'un téléchargement fait par erreur)
+  // ---------------------------------------------------------------------------
+  async function remettreNonTelecharge() {
+    if (running) return;
+    const coches = selectedRows();
+    if (!coches.length) return;
+    const achats = coches.map(achatOfRow);
+    running = true;
+    const ui = panel('Remettre des factures en « Non téléchargé »');
+    try {
+      if (achats.some((a) => !a)) throw new Error('Impossible de relier les lignes cochées aux factures : actualisez la page (F5) puis recochez.');
+      const mode = findMode(await api('GET', '/ac/rest/achats-simplifies/modes-reglement'));
+      const ok = await ui.ask(
+        `Remettre ${achats.length} facture(s) en « Non téléchargé » ?\n` +
+          'Seuls les règlements « Téléchargé » sont annulés ; une facture réglée autrement (vrai paiement) n\'est pas modifiée.\n' +
+          'Les PDF déjà enregistrés sur le poste ne sont pas supprimés.',
+        `↩ Oui, remettre ${achats.length} facture(s)`,
+        'Annuler'
+      );
+      if (!ok) {
+        ui.status('Annulé : aucune facture modifiée.');
+        return;
+      }
+      let faits = 0;
+      let ignores = 0;
+      for (let i = 0; i < achats.length; i++) {
+        const a = achats[i];
+        const nom = fileName(a).replace(/\.pdf$/i, '');
+        ui.progress(i, achats.length);
+        ui.status(`(${i + 1}/${achats.length}) ${nom}`);
+        try {
+          const detail = await api('GET', '/ac/rest/achats-simplifies/' + a.id);
+          const ech = detail.echeances || [];
+          const aAnnuler = (e) => e.statutPaiement === 'REGLE' && mode && e.idModeReglement === mode.id;
+          if (!ech.some(aAnnuler)) {
+            ignores++;
+            const autre = ech.some((e) => e.statutPaiement === 'REGLE');
+            ui.line(`${nom} — inchangée (${autre ? 'réglée par un autre mode que « Téléchargé »' : 'pas en Téléchargé'})`, 'warn');
+            continue;
+          }
+          const lien = (detail._links || {})['modifier-achat-echeances'];
+          if (!linkOk(lien)) throw new Error('MEG ne permet pas de modifier le règlement' + (lien && lien.title ? ' (' + lien.title + ')' : ''));
+          const body = ech.map((e) => {
+            const base = {
+              id: e.id,
+              version: e.version,
+              type: e.type,
+              dateEcheance: e.dateEcheance,
+              idModeReglement: e.idModeReglement,
+              montant: e.montant,
+              multiReglement: !!e.multiReglement,
+            };
+            if (aAnnuler(e)) return { ...base, statutPaiement: 'EN_ATTENTE' };
+            return e.statutPaiement === 'REGLE' ? { ...base, statutPaiement: 'REGLE', reglement: e.reglement } : { ...base, statutPaiement: e.statutPaiement };
+          });
+          await api('POST', lien.href, { body });
+          faits++;
+          ui.line(`${nom} — remise en Non téléchargé`, 'ok');
+        } catch (e) {
+          ui.line(`${nom} — ${e.message || e}`, 'err');
+        }
+      }
+      ui.progress(1, 1);
+      ui.status(`Terminé : ${faits} facture(s) remise(s) en Non téléchargé` + (ignores ? `, ${ignores} inchangée(s)` : '') + '.');
+    } catch (e) {
+      ui.status('Erreur');
+      ui.line(e.message || String(e), 'err');
+    } finally {
+      ui.finish();
+      running = false;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -889,8 +996,12 @@ html.atm-lga #mass-action-buttons > :not([id^="${MASS_BTN_ID}"]) { display: none
       if (e.key === 'Escape') hidePreview(true);
     });
     // Cases à cocher : le libellé du bouton du bandeau suit la sélection.
-    document.addEventListener('change', () => setTimeout(ensureMassButton, 0), true);
-    document.addEventListener('click', () => setTimeout(ensureMassButton, 50), true);
+    const majLibelles = () => {
+      ensureMassButton();
+      refreshTopLabel();
+    };
+    document.addEventListener('change', () => setTimeout(majLibelles, 0), true);
+    document.addEventListener('click', () => setTimeout(majLibelles, 50), true);
   }
 
   // ---------------------------------------------------------------------------
