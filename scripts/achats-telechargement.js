@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         Achats : téléchargement en lot des factures
 // @namespace    https://nicolas.chassard/meg
-// @version      1.3.0
-// @description  v1.3.0 (2026-11-24) : « Affichage personnalisé LGA » (page Achats épurée) / « Affichage classique » (MEG
+// @version      1.4.0
+// @description  v1.4.0 (2026-11-24) : colonne « Téléchargé par » (affichage LGA), tirée du journal des évènements MEG.
+//               v1.3.0 (2026-11-24) : « Affichage personnalisé LGA » (page Achats épurée) / « Affichage classique » (MEG
 //               d'origine) ; « Télécharger la sélection » dans le bandeau de sélection.
 //               v1.2.0 (2026-11-24) : libellés « Non téléchargé / Téléchargé », onglets « À télécharger / Téléchargé »,
 //               onglets « À traiter » et « À affecter » masqués ; bouton ✕ sur l'aperçu ; nom de fichier contrôlé.
@@ -18,6 +19,8 @@
 // ==/UserScript==
 
 // CHANGELOG
+// 1.4.0 (2026-11-24) — colonne « Téléchargé par » après « Règlement » (affichage LGA) : utilisateur qui a passé
+//                      la facture en Réglé en dernier (journal des évènements), date et heure en info-bulle.
 // 1.3.0 (2026-11-24) — bascule « Affichage personnalisé LGA » / « Affichage classique » (mémorisée dans ce Chrome,
 //                      LGA par défaut). LGA : colonnes Affectation, Liaison bancaire, Compte comptable, Source et
 //                      Date d'import masquées ; boutons Exporter, Importer et ⋮ masqués ; cartes « Factures à régler »
@@ -44,6 +47,8 @@
 //   POST /portail/rest/parametres/listes/reglement/update  body = { ordre, finMois, code, libelle, delai, compteComptable,
 //        type, jourPrecis, parDefaut, idEntrepriseEncrypted }  → création d'un mode de règlement (portail, sans X-IdEntreprise)
 //   GET  /portail/rest/parametres/listes/reglement/liste     → { personnalisee: [...] }
+//   GET  /ac/rest/journalEvenements?dateDebut&dateFin → { listeEvenementsBean: [{ dateHeure, utilisateur, objet,
+//        action, evenement: "Modification du statut de la facture N° qui passe de Non réglé à Réglé" }] }
 // Le jeton n'est pas lisible ailleurs : on le capte au vol sur les requêtes de l'appli (XHR).
 
 (function () {
@@ -725,6 +730,82 @@ html.atm-lga #mass-action-buttons > :not(#${MASS_BTN_ID}) { display: none !impor
   }
 
   // ---------------------------------------------------------------------------
+  // Colonne « Téléchargé par » (journal des évènements MEG)
+  // ---------------------------------------------------------------------------
+  const COL_CLASS = 'atm-col-telecharge';
+  let journal = null; // N° facture → { user, date } du dernier passage en Réglé
+  let journalEnt = null;
+  let journalLoading = false;
+  const STATUT_RE = /statut de la facture (.+?) qui passe de (.+?) à (.+?)\.?\s*$/;
+
+  async function loadJournal() {
+    if (!isLga() || !auth.token || !auth.ent || journalLoading) return;
+    if (journal && journalEnt === auth.ent) return;
+    journalLoading = true;
+    try {
+      const d = new Date();
+      const fin = new Date(d.getTime() + 86400e3);
+      const debut = new Date(d.getFullYear() - 3, d.getMonth(), 1);
+      const iso = (x) => `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`;
+      const r = await api('GET', `/ac/rest/journalEvenements?dateDebut=${iso(debut)}&dateFin=${iso(fin)}`);
+      const evts = ((r && r.listeEvenementsBean) || []).slice().sort((a, b) => String(a.dateHeure).localeCompare(String(b.dateHeure)));
+      const map = new Map();
+      for (const e of evts) {
+        const m = STATUT_RE.exec(e.evenement || '');
+        if (!m) continue;
+        if (m[3].trim() === 'Réglé') map.set(m[1].trim(), { user: e.utilisateur || '?', date: e.dateHeure });
+        else map.delete(m[1].trim());
+      }
+      journal = map;
+      journalEnt = auth.ent;
+      renderJournalColumn();
+    } catch (e) {
+      ATM.log('journal des évènements illisible :', e.message || e);
+    } finally {
+      journalLoading = false;
+    }
+  }
+
+  function fmtDateHeure(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso || '');
+    return m ? `le ${m[3]}/${m[2]}/${m[1]} à ${m[4]}:${m[5]}` : '';
+  }
+
+  function renderJournalColumn() {
+    if (!isLga()) return;
+    const table = document.querySelector('achat-liste-achats table');
+    if (!table) return;
+    const anchorCol = (row, tag) =>
+      row.querySelector(`${tag}.cdk-column-dateReglement`) || row.querySelector(`${tag}.cdk-column-etat`);
+    const hr = table.querySelector('thead tr');
+    if (hr && !hr.querySelector('th.' + COL_CLASS)) {
+      const a = anchorCol(hr, 'th');
+      if (a) {
+        const th = el('th', 'white-space:nowrap', 'Téléchargé par');
+        th.className = 'mat-mdc-header-cell mdc-data-table__header-cell cdk-header-cell ' + COL_CLASS;
+        th.title = 'Utilisateur qui a passé la facture en Téléchargé (journal des évènements MEG)';
+        a.insertAdjacentElement('afterend', th);
+      }
+    }
+    for (const tr of table.querySelectorAll('tbody tr.mat-mdc-row')) {
+      let td = tr.querySelector('td.' + COL_CLASS);
+      if (!td) {
+        const a = anchorCol(tr, 'td');
+        if (!a) continue;
+        td = el('td', 'white-space:nowrap');
+        td.className = 'mat-mdc-cell mdc-data-table__cell cdk-cell ' + COL_CLASS;
+        a.insertAdjacentElement('afterend', td);
+      }
+      const num = cellText(tr, 'numeroFacture');
+      const info = journal && journal.get(num);
+      const text = info ? info.user : journal ? '-' : '…';
+      if (td.textContent !== text) td.textContent = text;
+      const title = info ? `Téléchargée par ${info.user} ${fmtDateHeure(info.date)}` : '';
+      if (td.title !== title) td.title = title;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Libellés : « réglé » devient « téléchargé » ; onglets inutiles masqués
   // ---------------------------------------------------------------------------
   const CHIP_LABELS = { 'Non réglé': 'Non téléchargé', 'Réglé': 'Téléchargé' };
@@ -770,10 +851,12 @@ html.atm-lga #mass-action-buttons > :not(#${MASS_BTN_ID}) { display: none !impor
       }
       relabel();
       ensureMassButton();
+      renderJournalColumn();
       clearTimeout(t);
       t = setTimeout(() => {
         ensureToggle();
         ensureButton();
+        loadJournal();
       }, 150);
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
     applyMode();
