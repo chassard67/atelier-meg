@@ -8,11 +8,10 @@
   "announcement": null,
   "licenceRequired": false,
   "release": {
-    "version": "2.2.2",
+    "version": "2.3.0",
     "date": "2026-11-24",
     "notes": [
-      "Correctif : la page Achats ne boucle plus en rechargement lors de la reconnexion automatique à MEG.",
-      "Achats : « 🖨 Télécharger et imprimer » — téléchargement, fusion des PDF dans l'ordre du tableau et impression ; les factures ne passent en Téléchargé qu'après confirmation que l'impression s'est bien passée (et seulement si tout a été téléchargé et fusionné)."
+      "Achats : un seul bouton Télécharger. À la fin du téléchargement, une fenêtre propose de fusionner toutes les factures en un PDF à imprimer ; les factures passent en Téléchargé à la fin (après confirmation de l'impression si vous imprimez)."
     ]
   },
   "defaultMatches": [

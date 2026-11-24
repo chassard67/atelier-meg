@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Achats : téléchargement en lot des factures
 // @namespace    https://nicolas.chassard/meg
-// @version      1.6.1
-// @description  v1.6.1 (2026-11-24) : CORRECTIF boucle de rechargement à la reconnexion (paramètres code/state).
+// @version      1.7.0
+// @description  v1.7.0 (2026-11-24) : un seul bouton Télécharger ; à la fin, proposition de fusionner les factures en un
+//               PDF à imprimer. Passage en Téléchargé à la fin (après impression confirmée si on imprime).
+//               v1.6.1 (2026-11-24) : CORRECTIF boucle de rechargement à la reconnexion (paramètres code/state).
 //               v1.6.0 (2026-11-24) : « Télécharger et imprimer » ne passe les factures en Téléchargé qu'une fois tout
 //               téléchargé, fusionné, imprimé et l'impression confirmée.
 //               v1.5.0 (2026-11-24) : boutons « Télécharger et imprimer » : même traitement que Télécharger, puis les PDF
@@ -24,6 +26,12 @@
 // ==/UserScript==
 
 // CHANGELOG
+// 1.7.0 (2026-11-24) — boutons « Télécharger et imprimer » supprimés : un seul bouton (en haut : toutes ; bandeau : la
+//                      sélection). Les PDF sont d'abord tous téléchargés (statut inchangé), puis une question propose de
+//                      fusionner les factures en un PDF à imprimer. « Non » → passage en Téléchargé ; « Oui » → fusion,
+//                      impression, puis passage en Téléchargé seulement après confirmation que l'impression s'est bien
+//                      passée. En cas d'erreur ou d'arrêt : pas de fusion, seules les factures bien téléchargées passent en
+//                      Téléchargé.
 // 1.6.1 (2026-11-24) — CORRECTIF : à la reconnexion automatique de MEG (adresse avec ?code=…&state=…), le mode LGA
 //                      prenait ces paramètres pour des filtres, les retirait et rechargeait → boucle de rechargement.
 //                      Désormais seuls les filtres masqués connus sont retirés, jamais pendant une connexion, et au plus
@@ -319,12 +327,12 @@
         log.appendChild(d);
         log.scrollTop = log.scrollHeight;
       },
-      ask(question, okLabel) {
+      ask(question, okLabel, noLabel = 'Annuler') {
         return new Promise((resolve) => {
           const wrap = el('div', 'margin:8px 0;padding:10px 12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;color:#78350f;white-space:pre-wrap');
           wrap.appendChild(el('div', 'margin-bottom:8px', question));
           const yes = el('button', 'background:#5b45f5;color:#fff;border:0;border-radius:6px;padding:6px 14px;font:inherit;cursor:pointer;margin-right:8px', okLabel);
-          const no = el('button', 'background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:6px;padding:6px 14px;font:inherit;cursor:pointer', 'Annuler');
+          const no = el('button', 'background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:6px;padding:6px 14px;font:inherit;cursor:pointer', noLabel);
           const done = (v) => {
             yes.disabled = no.disabled = true;
             resolve(v);
@@ -363,7 +371,7 @@
   // ---------------------------------------------------------------------------
   let running = false;
 
-  async function run({ selection: parSelection = false, imprimer = false } = {}) {
+  async function run({ selection: parSelection = false } = {}) {
     if (running) return;
     // Factures cochées (bandeau de sélection) : seules celles-là sont traitées (lues AVANT d'afficher la fenêtre).
     const coches = parSelection ? selectedRows() : [];
@@ -373,8 +381,8 @@
     const ui = panel();
     let ok = 0;
     let ko = 0;
-    const aImprimer = []; // PDF des factures traitées, dans l'ordre du tableau
-    const aRegler = []; // mode impression : règlements faits seulement après impression confirmée
+    const aImprimer = []; // PDF des factures téléchargées, dans l'ordre du tableau
+    const aRegler = []; // factures à passer en Téléchargé à la fin
     try {
       if (coches.length && selection.some((a) => !a)) {
         throw new Error('Impossible de relier les lignes cochées aux factures : actualisez la page (F5) puis recochez.');
@@ -434,7 +442,7 @@
           // 1. Télécharger le PDF et l'enregistrer.
           const { buf, type } = await api('GET', links['url-document'].href, { binary: true });
           if (!isPdf(buf)) throw new Error('le document reçu n\'est pas un PDF (' + (type || 'type inconnu') + ')');
-          if (imprimer) aImprimer.push(buf.slice(0));
+          aImprimer.push(buf.slice(0));
           const saved = await ATM.download(toDataUrl(buf, 'application/pdf'), `${societe}/${nom}`, 'uniquify');
 
           // 2. Seulement une fois le fichier écrit : passer la facture en Réglé / Téléchargé.
@@ -454,26 +462,18 @@
             ui.line(`${fichier} — téléchargée (déjà réglée : règlement inchangé)`, 'ok');
             continue;
           }
-          if (imprimer) {
-            ok++;
-            aRegler.push({ detail, lienRegl, fichier });
-            ui.line(`${fichier} — téléchargée (passage en Téléchargé après impression)`, 'ok');
-            continue;
-          }
-          await api('POST', lienRegl.href, {
-            body: echeancesReglees(detail, mode.id, date),
-          });
           ok++;
-          ui.line(`${fichier} — réglée (Téléchargé, ${frDate(date)})`, 'ok');
+          aRegler.push({ detail, lienRegl, fichier });
+          ui.line(`${fichier} — téléchargée`, 'ok');
         } catch (e) {
           ko++;
-          if (imprimer && aImprimer.length > ok) aImprimer.length = ok; // facture en erreur : pas imprimée
+          if (aImprimer.length > ok) aImprimer.length = ok; // facture en erreur : pas imprimée
           ui.line(`${nom} — ${e.message || e}`, 'err');
         }
       }
       ui.progress(1, 1);
       ui.status(`Terminé : ${ok} facture(s) téléchargée(s)` + (ko ? `, ${ko} en erreur` : '') + '.');
-      if (imprimer) await imprimerPuisRegler(ui, { aImprimer, aRegler, ko, mode, date });
+      await finaliser(ui, { aImprimer, aRegler, ko, mode, date });
     } catch (e) {
       ui.status('Erreur');
       ui.line(e.message || String(e), 'err');
@@ -499,46 +499,7 @@
     return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
   }
 
-  // Mode impression : tout téléchargé ? fusion OK ? impression confirmée ? → alors seulement, passage en Téléchargé.
-  async function imprimerPuisRegler(ui, { aImprimer, aRegler, ko, mode, date }) {
-    if (ui.stopped || ko) {
-      ui.line(
-        (ui.stopped ? 'Traitement arrêté' : `${ko} facture(s) en erreur`) +
-          ' : rien n\'est imprimé et aucune facture n\'est passée en Téléchargé. Les PDF déjà enregistrés restent dans le dossier ; corrigez puis relancez.',
-        'warn'
-      );
-      return;
-    }
-    if (!aImprimer.length) {
-      ui.line('Rien à imprimer.', 'warn');
-      return;
-    }
-    ui.status(`Fusion de ${aImprimer.length} PDF…`);
-    let url;
-    try {
-      url = await fusionner(aImprimer);
-    } catch (e) {
-      ui.line(`Fusion impossible (${e.message || e}) : aucune facture n'est passée en Téléchargé.`, 'err');
-      return;
-    }
-    ui.offerPdf(() => imprimerPdf(url));
-    imprimerPdf(url);
-    ui.status('Impression en cours…');
-    if (!aRegler.length) {
-      ui.line('Fenêtre d\'impression ouverte. Les factures étaient déjà en Téléchargé.', 'ok');
-      return;
-    }
-    const okImpr = await ui.ask(
-      `Fenêtre d'impression ouverte (${aImprimer.length} facture(s)).\n` +
-        'Une fois l\'impression terminée : s\'est-elle bien passée ?\n' +
-        `Les ${aRegler.length} facture(s) seront alors passées en Téléchargé. (Bouton « Réimprimer » en bas si besoin.)`,
-      `Oui, passer ${aRegler.length} facture(s) en Téléchargé`
-    );
-    if (!okImpr) {
-      ui.line('Impression non confirmée : aucune facture n\'est passée en Téléchargé (les PDF restent dans le dossier).', 'warn');
-      ui.status('Terminé sans changement de statut.');
-      return;
-    }
+  async function passerEnTelecharge(ui, aRegler, mode, date) {
     let faits = 0;
     for (const r of aRegler) {
       try {
@@ -549,7 +510,67 @@
         ui.line(`${r.fichier} — passage en Téléchargé impossible : ${e.message || e}`, 'err');
       }
     }
-    ui.status(`Terminé : ${aImprimer.length} facture(s) imprimée(s), ${faits} passée(s) en Téléchargé.`);
+    return faits;
+  }
+
+  // Fin du téléchargement : proposition de fusion/impression, puis passage en Téléchargé.
+  async function finaliser(ui, { aImprimer, aRegler, ko, mode, date }) {
+    if (!aImprimer.length) return;
+    const n = aImprimer.length;
+    // Erreur ou arrêt : pas de fusion ; seules les factures bien téléchargées passent en Téléchargé.
+    if (ui.stopped || ko) {
+      ui.line(
+        (ui.stopped ? 'Traitement arrêté' : `${ko} facture(s) en erreur`) + ' : pas de fusion pour impression.',
+        'warn'
+      );
+      const faits = await passerEnTelecharge(ui, aRegler, mode, date);
+      ui.status(`Terminé : ${n} facture(s) téléchargée(s), ${faits} passée(s) en Téléchargé, ${ko} en erreur.`);
+      return;
+    }
+    ui.status(`${n} facture(s) téléchargée(s).`);
+    const fusion = await ui.ask(
+      `${n} facture(s) téléchargée(s).\nFusionner toutes les factures en un PDF à imprimer ?` +
+        (aRegler.length ? `\n(Les ${aRegler.length} facture(s) passeront en Téléchargé après l'impression.)` : ''),
+      '🖨 Oui, fusionner et imprimer',
+      'Non, terminer'
+    );
+    if (!fusion) {
+      const faits = await passerEnTelecharge(ui, aRegler, mode, date);
+      ui.status(`Terminé : ${n} facture(s) téléchargée(s), ${faits} passée(s) en Téléchargé.`);
+      return;
+    }
+    ui.status(`Fusion de ${n} PDF…`);
+    let url;
+    try {
+      url = await fusionner(aImprimer);
+    } catch (e) {
+      ui.line(`Fusion impossible : ${e.message || e}`, 'err');
+      const quand = aRegler.length && (await ui.ask(`Passer quand même les ${aRegler.length} facture(s) en Téléchargé (sans impression) ?`, 'Oui', 'Non'));
+      const faits = quand ? await passerEnTelecharge(ui, aRegler, mode, date) : 0;
+      ui.status(`Terminé : ${n} facture(s) téléchargée(s), ${faits} passée(s) en Téléchargé.`);
+      return;
+    }
+    ui.offerPdf(() => imprimerPdf(url));
+    imprimerPdf(url);
+    ui.status('Impression en cours…');
+    if (!aRegler.length) {
+      ui.line('Fenêtre d\'impression ouverte. Les factures étaient déjà en Téléchargé.', 'ok');
+      ui.status(`Terminé : ${n} facture(s) téléchargée(s) et envoyée(s) à l'impression.`);
+      return;
+    }
+    const okImpr = await ui.ask(
+      `Fenêtre d'impression ouverte (${n} facture(s)).\nUne fois l'impression terminée : s'est-elle bien passée ?\n` +
+        '(Bouton « Réimprimer » en bas si besoin.)',
+      `Oui, passer ${aRegler.length} facture(s) en Téléchargé`,
+      'Non, ne rien changer'
+    );
+    if (!okImpr) {
+      ui.line('Impression non confirmée : aucune facture n\'est passée en Téléchargé (les PDF restent dans le dossier).', 'warn');
+      ui.status('Terminé sans changement de statut.');
+      return;
+    }
+    const faits = await passerEnTelecharge(ui, aRegler, mode, date);
+    ui.status(`Terminé : ${n} facture(s) imprimée(s), ${faits} passée(s) en Téléchargé.`);
   }
 
   function imprimerPdf(url) {
@@ -585,8 +606,6 @@
     const existing = document.getElementById(BTN_ID);
     if (!isLga()) {
       if (existing) existing.remove();
-      const ep = document.getElementById(BTN_ID + '-print');
-      if (ep) ep.remove();
       hidePreview(true);
       return;
     }
@@ -603,16 +622,6 @@
       run();
     });
     importer.parentElement.insertBefore(b, importer);
-    const p = el('button', btnStyle(importer.offsetHeight) + ';margin-right:8px', '🖨 Télécharger et imprimer');
-    p.id = BTN_ID + '-print';
-    p.type = 'button';
-    p.title = 'Télécharge toutes les factures non téléchargées, fusionne les PDF et ouvre l\'impression ; passage en Téléchargé après confirmation de l\'impression';
-    p.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      run({ imprimer: true });
-    });
-    importer.parentElement.insertBefore(p, importer);
   }
 
   // Bandeau « n éléments sélectionnés » de MEG : la suppression est masquée (CSS),
@@ -634,24 +643,9 @@
       });
       zone.appendChild(b);
     }
-    let p = document.getElementById(MASS_BTN_ID + '-print');
-    if (!p) {
-      p = el('button', btnStyle(30) + ';border-color:#fff;margin-left:8px');
-      p.id = MASS_BTN_ID + '-print';
-      p.type = 'button';
-      p.title = 'Télécharge la sélection, puis fusionne les PDF et ouvre l\'impression';
-      p.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        run({ selection: true, imprimer: true });
-      });
-      zone.appendChild(p);
-    }
     const n = selectedRows().length;
     const label = `⬇ Télécharger la sélection (${n})`;
     if (b.textContent !== label) b.textContent = label;
-    const labelP = `🖨 Télécharger et imprimer (${n})`;
-    if (p.textContent !== labelP) p.textContent = labelP;
   }
 
   // ---------------------------------------------------------------------------
