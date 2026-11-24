@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         Achats : téléchargement en lot des factures
 // @namespace    https://nicolas.chassard/meg
-// @version      1.6.0
-// @description  v1.6.0 (2026-11-24) : « Télécharger et imprimer » ne passe les factures en Téléchargé qu'une fois tout
+// @version      1.6.1
+// @description  v1.6.1 (2026-11-24) : CORRECTIF boucle de rechargement à la reconnexion (paramètres code/state).
+//               v1.6.0 (2026-11-24) : « Télécharger et imprimer » ne passe les factures en Téléchargé qu'une fois tout
 //               téléchargé, fusionné, imprimé et l'impression confirmée.
 //               v1.5.0 (2026-11-24) : boutons « Télécharger et imprimer » : même traitement que Télécharger, puis les PDF
 //               sont fusionnés (ordre du tableau) et la fenêtre d'impression s'ouvre.
@@ -23,6 +24,10 @@
 // ==/UserScript==
 
 // CHANGELOG
+// 1.6.1 (2026-11-24) — CORRECTIF : à la reconnexion automatique de MEG (adresse avec ?code=…&state=…), le mode LGA
+//                      prenait ces paramètres pour des filtres, les retirait et rechargeait → boucle de rechargement.
+//                      Désormais seuls les filtres masqués connus sont retirés, jamais pendant une connexion, et au plus
+//                      un rechargement par minute.
 // 1.6.0 (2026-11-24) — Télécharger et imprimer : passage en Téléchargé seulement si TOUTES les factures ont été
 //                      téléchargées, la fusion réussie, et l'impression confirmée (« L'impression s'est bien passée ? »).
 //                      Sinon aucune facture n'est modifiée (les PDF déjà enregistrés restent dans le dossier).
@@ -656,7 +661,11 @@
   const TOGGLE_ID = 'atm-affichage-toggle';
   const STYLE_ID = 'atm-lga-style';
   // Paramètres d'URL conservés en LGA (les filtres masqués sont dans l'URL : etat=…, etc.).
-  const URL_PARAMS_OK = /^(onglet|id|recherche.*)$/i;
+  // Filtres masqués en LGA (paramètres d'URL de MEG) : seuls ceux-ci sont retirés. Liste fermée : un paramètre
+  // inconnu (connexion OIDC code/state, etc.) n'est JAMAIS touché.
+  const URL_FILTRES_MASQUES = /^(etat|affectation|liaisonBancaire|source|comptes?(Comptables?)?|periode.*|date.*)$/i;
+  const URL_CONNEXION = /^(code|state|session_state|iss|error|error_description)$/i;
+  const RELOAD_GUARD = 'atm-lga-reload';
   function modeLga() {
     try {
       return localStorage.getItem(MODE_KEY) !== 'classique';
@@ -682,11 +691,26 @@ html.atm-lga #mass-action-buttons > :not([id^="${MASS_BTN_ID}"]) { display: none
 `;
 
   function filtresMasquesDansUrl() {
-    return [...new URLSearchParams(location.search).keys()].some((k) => !URL_PARAMS_OK.test(k));
+    const keys = [...new URLSearchParams(location.search).keys()];
+    if (keys.some((k) => URL_CONNEXION.test(k))) return false; // connexion en cours : ne rien toucher
+    if (!keys.some((k) => URL_FILTRES_MASQUES.test(k))) return false;
+    // Garde-fou : au plus un rechargement par minute.
+    try {
+      const last = Number(sessionStorage.getItem(RELOAD_GUARD) || 0);
+      if (Date.now() - last < 60e3) return false;
+    } catch (e) {
+      return false;
+    }
+    return true;
+  }
+  function noteReload() {
+    try {
+      sessionStorage.setItem(RELOAD_GUARD, String(Date.now()));
+    } catch (e) {}
   }
   function urlSansFiltresMasques() {
     const q = new URLSearchParams(location.search);
-    for (const k of [...q.keys()]) if (!URL_PARAMS_OK.test(k)) q.delete(k);
+    for (const k of [...q.keys()]) if (URL_FILTRES_MASQUES.test(k)) q.delete(k);
     const qs = q.toString();
     return location.pathname + (qs ? '?' + qs : '') + location.hash;
   }
@@ -696,7 +720,10 @@ html.atm-lga #mass-action-buttons > :not([id^="${MASS_BTN_ID}"]) { display: none
       localStorage.setItem(MODE_KEY, lga ? 'lga' : 'classique');
     } catch (e) {}
     // Rechargement : l'affichage classique est le MEG d'origine, sans aucun reste de l'extension.
-    if (lga && filtresMasquesDansUrl()) location.replace(urlSansFiltresMasques());
+    if (lga && filtresMasquesDansUrl()) {
+      noteReload();
+      location.replace(urlSansFiltresMasques());
+    }
     else location.reload();
   }
 
@@ -711,6 +738,7 @@ html.atm-lga #mass-action-buttons > :not([id^="${MASS_BTN_ID}"]) { display: none
     }
     // Arrivée sur la page en LGA avec des filtres masqués actifs (lien, historique…) : on les vide.
     if (lga && filtresMasquesDansUrl()) {
+      noteReload();
       history.replaceState(history.state, '', urlSansFiltresMasques());
       location.reload();
       return;
