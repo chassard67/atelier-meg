@@ -8,10 +8,10 @@
   "announcement": null,
   "licenceRequired": false,
   "release": {
-    "version": "2.1.0",
+    "version": "2.1.1",
     "date": "2026-11-24",
     "notes": [
-      "Liste des dossiers (en-tête MEG) : nombre de factures à télécharger affiché à côté de chaque dossier, sans ouvrir les dossiers (↻ pour recompter)."
+      "Liste des dossiers : le dossier ouvert est recompté en priorité à chaque page, les autres en arrière-plan dès l'arrivée sur MEG (sans ouvrir la liste)."
     ]
   },
   "defaultMatches": [
