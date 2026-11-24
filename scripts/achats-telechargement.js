@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Achats : téléchargement en lot des factures
 // @namespace    https://nicolas.chassard/meg
-// @version      1.0.0
-// @description  v1.0.0 (2026-11-24) : bouton « Télécharger les factures » sur Achats simplifiés. Télécharge le PDF de
+// @version      1.1.0
+// @description  v1.1.0 (2026-11-24) : aperçu du PDF au survol du nom de fichier ; seules les factures cochées sont
+//               traitées s'il y en a ; création automatique du mode « Téléchargé » s'il manque (avec confirmation).
+//               v1.0.0 (2026-11-24) : bouton « Télécharger les factures » sur Achats simplifiés. Télécharge le PDF de
 //               chaque facture non réglée dans Téléchargements/<Société>/« Fournisseur - JJ-MM-AAAA - N°.pdf »,
 //               puis la passe en Réglé, mode de règlement « Téléchargé » (code TELECHARGE), date du jour.
 // @author       Nicolas
@@ -12,6 +14,8 @@
 // ==/UserScript==
 
 // CHANGELOG
+// 1.1.0 (2026-11-24) — aperçu PDF au survol de la colonne « Nom du fichier » ; factures cochées = seules traitées ;
+//                      proposition de créer le mode TELECHARGE (Paramètres > Listes par défaut) s'il manque.
 // 1.0.0 (2026-11-24) — première version.
 //
 // API MEG utilisée (relevée le 24/11/2026 sur DYNASTIE TRANSACTION) — hôte rest.mon-expert-en-gestion.fr,
@@ -23,6 +27,9 @@
 //   POST …/{id}/modifier-echeances   body = [échéances]                      → achat mis à jour
 //        (lien HATEOAS _links['modifier-achat-echeances'] du détail ; '-' = interdit)
 //   GET  /ac/rest/commun/utilisateur?withCompanies=true                      → listeEntreprises [{ id, name }]
+//   POST /portail/rest/parametres/listes/reglement/update  body = { ordre, finMois, code, libelle, delai, compteComptable,
+//        type, jourPrecis, parDefaut, idEntrepriseEncrypted }  → création d'un mode de règlement (portail, sans X-IdEntreprise)
+//   GET  /portail/rest/parametres/listes/reglement/liste     → { personnalisee: [...] }
 // Le jeton n'est pas lisible ailleurs : on le capte au vol sur les requêtes de l'appli (XHR).
 
 (function () {
@@ -41,6 +48,22 @@
   // ---------------------------------------------------------------------------
   const auth = { token: null, ent: null };
   const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+  // Dernière liste d'achats chargée par l'appli (ordre = ordre des lignes du tableau).
+  let lastList = [];
+  const LIST_RE = /^https:\/\/rest\.mon-expert-en-gestion\.fr\/ac\/rest\/achats-simplifies(\?|$)/;
+  const origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    if (String(method).toUpperCase() === 'GET' && LIST_RE.test(String(url))) {
+      this.addEventListener('load', () => {
+        if (this.__atm || this.status !== 200) return;
+        try {
+          const j = typeof this.response === 'string' ? JSON.parse(this.response) : this.response;
+          if (j && Array.isArray(j.data)) lastList = j.data;
+        } catch (e) {}
+      });
+    }
+    return origOpen.apply(this, arguments);
+  };
   XMLHttpRequest.prototype.setRequestHeader = function (k, v) {
     const key = String(k).toLowerCase();
     if (key === 'authorization' && /^Bearer /.test(v)) auth.token = v;
@@ -51,17 +74,18 @@
   // ---------------------------------------------------------------------------
   // Appels API
   // ---------------------------------------------------------------------------
-  function api(method, path, { body, binary } = {}) {
+  function api(method, path, { body, binary, noEnt } = {}) {
     return new Promise((resolve, reject) => {
       if (!auth.token || !auth.ent) {
         return reject(new Error('Session MEG pas encore détectée : rechargez la page (F5) puis réessayez.'));
       }
       const x = new XMLHttpRequest();
+      x.__atm = true;
       x.open(method, /^https:/.test(path) ? path : API + path);
       x.withCredentials = true;
       if (binary) x.responseType = 'arraybuffer';
       origSetHeader.call(x, 'Authorization', auth.token);
-      origSetHeader.call(x, 'X-IdEntreprise', auth.ent);
+      if (!noEnt) origSetHeader.call(x, 'X-IdEntreprise', auth.ent);
       origSetHeader.call(x, 'Accept', binary ? 'application/pdf, */*' : 'application/json, text/plain, */*');
       if (body !== undefined) origSetHeader.call(x, 'Content-Type', 'application/json');
       x.onload = () => {
@@ -110,6 +134,57 @@
     // Repli : le sélecteur de dossier dans l'en-tête de MEG.
     const btn = [...document.querySelectorAll('header button, button')].find((b) => /^[A-Z0-9][A-Z0-9 &'.-]{2,}$/.test(b.textContent.trim()));
     return btn ? btn.textContent.trim() : 'Dossier MEG';
+  }
+
+  const findMode = (modes) => (modes || []).find((m) => String(m.code).toUpperCase() === MODE_CODE && m.isActive !== false);
+
+  // Création du mode « Téléchargé » dans Paramètres > Listes par défaut > Modes de règlement
+  // (même appel que l'écran de MEG). Rien n'est créé s'il existe déjà côté paramétrage.
+  async function creerModeTelecharge() {
+    const liste = await api('GET', '/portail/rest/parametres/listes/reglement/liste', { noEnt: true });
+    const perso = (liste && liste.personnalisee) || [];
+    if (!perso.some((m) => String(m.code).toUpperCase() === MODE_CODE)) {
+      await api('POST', '/portail/rest/parametres/listes/reglement/update', {
+        noEnt: true,
+        body: {
+          ordre: perso.length,
+          finMois: false,
+          code: MODE_CODE,
+          libelle: 'Téléchargé',
+          delai: '0',
+          compteComptable: '99999999',
+          type: 'TYPE_VIREMENT',
+          jourPrecis: '0',
+          parDefaut: false,
+          idEntrepriseEncrypted: auth.ent,
+        },
+      });
+    }
+    return findMode(await api('GET', '/ac/rest/achats-simplifies/modes-reglement'));
+  }
+
+  // Lignes du tableau → achats de la dernière liste chargée par l'appli.
+  function rowsOfTable() {
+    return [...document.querySelectorAll('achat-liste-achats tbody tr.mat-mdc-row, tbody tr.mat-mdc-row')];
+  }
+  const cellText = (tr, col) => {
+    const td = tr.querySelector('td.cdk-column-' + col);
+    return td ? td.textContent.trim() : '';
+  };
+  function achatOfRow(tr) {
+    const rows = rowsOfTable();
+    const i = rows.indexOf(tr);
+    const nom = cellText(tr, 'nomFichier');
+    const num = cellText(tr, 'numeroFacture');
+    const same = (a) => a && (!nom || (a.document && a.document.nom) === nom) && (!num || a.numeroFacture === num);
+    if (i >= 0 && same(lastList[i])) return lastList[i];
+    return lastList.find(same) || null;
+  }
+  function selectedRows() {
+    return rowsOfTable().filter((tr) => {
+      const cb = tr.querySelector('td.cdk-column-selection input[type=checkbox]');
+      return cb && cb.checked;
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -207,6 +282,23 @@
         log.appendChild(d);
         log.scrollTop = log.scrollHeight;
       },
+      ask(question, okLabel) {
+        return new Promise((resolve) => {
+          const wrap = el('div', 'margin:8px 0;padding:10px 12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;color:#78350f;white-space:pre-wrap');
+          wrap.appendChild(el('div', 'margin-bottom:8px', question));
+          const yes = el('button', 'background:#5b45f5;color:#fff;border:0;border-radius:6px;padding:6px 14px;font:inherit;cursor:pointer;margin-right:8px', okLabel);
+          const no = el('button', 'background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:6px;padding:6px 14px;font:inherit;cursor:pointer', 'Annuler');
+          const done = (v) => {
+            yes.disabled = no.disabled = true;
+            resolve(v);
+          };
+          yes.onclick = () => done(true);
+          no.onclick = () => done(false);
+          wrap.append(yes, no);
+          log.appendChild(wrap);
+          yes.focus();
+        });
+      },
       finish() {
         btnStop.hidden = true;
         btnClose.hidden = false;
@@ -232,26 +324,38 @@
 
   async function run() {
     if (running) return;
+    // Factures cochées : seules celles-là sont traitées (lues AVANT d'afficher la fenêtre).
+    const coches = selectedRows();
+    const selection = coches.map(achatOfRow);
     running = true;
     const ui = panel();
     let ok = 0;
     let ko = 0;
     try {
+      if (coches.length && selection.some((a) => !a)) {
+        throw new Error('Impossible de relier les lignes cochées aux factures : actualisez la page (F5) puis recochez.');
+      }
       const [modes, societeBrut, achats] = await Promise.all([
         api('GET', '/ac/rest/achats-simplifies/modes-reglement'),
         nomSociete(),
-        listAchatsNonRegles(),
+        coches.length ? Promise.resolve(selection) : listAchatsNonRegles(),
       ]);
-      const mode = (modes || []).find((m) => String(m.code).toUpperCase() === MODE_CODE && m.isActive !== false);
+      let mode = findMode(modes);
       if (!mode) {
         ui.status('Mode de règlement « Téléchargé » absent de ce dossier');
-        ui.line(
-          'Créez-le une fois dans ce dossier : Paramètres > Listes par défaut > Modes de règlement > Ajouter\n' +
-            '  code TELECHARGE, libellé Téléchargé, délai 0 jours, compte comptable 99999999.\n' +
-            'Puis relancez le téléchargement.',
-          'err'
+        const ok = await ui.ask(
+          'Ce dossier n\'a pas encore le mode de règlement « Téléchargé ».\n' +
+            'Le créer maintenant dans Paramètres > Listes par défaut > Modes de règlement ?\n' +
+            '  code TELECHARGE · libellé Téléchargé · délai 0 jour · type Virement · compte comptable 99999999',
+          'Créer le mode et continuer'
         );
-        return;
+        if (!ok) {
+          ui.line('Annulé : aucun fichier téléchargé.', 'warn');
+          return;
+        }
+        mode = await creerModeTelecharge();
+        if (!mode) throw new Error('Le mode TELECHARGE n\'a pas pu être créé (droits insuffisants ?). Créez-le à la main dans Paramètres.');
+        ui.line('Mode de règlement « Téléchargé » créé dans ce dossier.', 'ok');
       }
       const societe = cleanName(societeBrut) || 'Dossier MEG';
       const date = today();
@@ -259,7 +363,9 @@
         ui.status('Aucune facture non réglée : rien à télécharger.');
         return;
       }
-      ui.status(`${achats.length} facture(s) non réglée(s) — dossier Téléchargements\\${societe}`);
+      ui.status(
+        `${achats.length} facture(s) ${coches.length ? 'cochée(s)' : 'non réglée(s)'} — dossier Téléchargements\\${societe}`
+      );
 
       for (let i = 0; i < achats.length; i++) {
         if (ui.stopped) {
@@ -274,11 +380,12 @@
           const detail = await api('GET', '/ac/rest/achats-simplifies/' + a.id);
           const links = detail._links || {};
           if (!linkOk(links['url-document'])) throw new Error('aucun document PDF attaché');
+          if (!(detail.echeances || []).length) throw new Error('aucune échéance à régler');
+          const dejaReglee = detail.echeances.every((e) => e.statutPaiement === 'REGLE');
           const lienRegl = links['modifier-achat-echeances'];
-          if (!linkOk(lienRegl)) {
+          if (!dejaReglee && !linkOk(lienRegl)) {
             throw new Error('MEG ne permet pas de modifier le règlement' + (lienRegl && lienRegl.title ? ' (' + lienRegl.title + ')' : ''));
           }
-          if (!(detail.echeances || []).length) throw new Error('aucune échéance à régler');
 
           // 1. Télécharger le PDF et l'enregistrer.
           const { buf, type } = await api('GET', links['url-document'].href, { binary: true });
@@ -286,11 +393,16 @@
           const saved = await ATM.download(toDataUrl(buf, 'application/pdf'), `${societe}/${nom}`, 'uniquify');
 
           // 2. Seulement une fois le fichier écrit : passer la facture en Réglé / Téléchargé.
+          const fichier = String((saved && saved.filename) || nom).split(/[\\/]/).pop();
+          if (dejaReglee) {
+            ok++;
+            ui.line(`${fichier} — téléchargée (déjà réglée : règlement inchangé)`, 'ok');
+            continue;
+          }
           await api('POST', lienRegl.href, {
             body: echeancesReglees(detail, mode.id, date),
           });
           ok++;
-          const fichier = String((saved && saved.filename) || nom).split(/[\\/]/).pop();
           ui.line(`${fichier} — réglée (Téléchargé, ${frDate(date)})`, 'ok');
         } catch (e) {
           ko++;
@@ -298,7 +410,7 @@
         }
       }
       ui.progress(1, 1);
-      ui.status(`Terminé : ${ok} facture(s) téléchargée(s) et réglée(s)` + (ko ? `, ${ko} en erreur` : '') + '.');
+      ui.status(`Terminé : ${ok} facture(s) téléchargée(s)` + (ko ? `, ${ko} en erreur` : '') + '.');
     } catch (e) {
       ui.status('Erreur');
       ui.line(e.message || String(e), 'err');
@@ -315,14 +427,26 @@
     return [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Importer');
   }
 
+  function refreshLabel() {
+    const b = document.getElementById(BTN_ID);
+    if (!b) return;
+    const n = selectedRows().length;
+    const label = n ? `⬇ Télécharger la sélection (${n})` : '⬇ Télécharger les factures';
+    if (b.textContent !== label) b.textContent = label;
+    b.title = n
+      ? `Télécharge les ${n} facture(s) cochée(s) dans Téléchargements\\<Société>, puis les passe en Réglé (mode Téléchargé)`
+      : 'Aucune case cochée : télécharge toutes les factures non réglées dans Téléchargements\\<Société>, puis les passe en Réglé (mode Téléchargé)';
+  }
+
   function ensureButton() {
     const onPage = PAGE_RE.test(location.pathname);
     const existing = document.getElementById(BTN_ID);
     if (!onPage) {
       if (existing) existing.remove();
+      hidePreview(true);
       return;
     }
-    if (existing) return;
+    if (existing) return refreshLabel();
     const importer = findImporter();
     if (!importer || !importer.parentElement) return;
     const b = el(
@@ -333,13 +457,126 @@
     );
     b.id = BTN_ID;
     b.type = 'button';
-    b.title = 'Télécharge les PDF des factures non réglées dans Téléchargements\\<Société>, puis les passe en Réglé (mode Téléchargé)';
     b.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       run();
     });
     importer.parentElement.insertBefore(b, importer);
+    refreshLabel();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Aperçu du PDF au survol de la colonne « Nom du fichier »
+  // ---------------------------------------------------------------------------
+  const PREVIEW_ID = 'atm-achats-preview';
+  const pdfCache = new Map(); // id → URL blob (les 20 derniers)
+  let hoverTimer = null;
+  let hideTimer = null;
+  let currentId = null;
+
+  async function pdfUrl(achat) {
+    if (pdfCache.has(achat.id)) return pdfCache.get(achat.id);
+    const { buf } = await api('GET', `/ac/rest/achats-simplifies/${achat.id}/telecharger-document`, { binary: true });
+    if (!isPdf(buf)) throw new Error('document non PDF');
+    const url = URL.createObjectURL(new Blob([buf], { type: 'application/pdf' }));
+    pdfCache.set(achat.id, url);
+    if (pdfCache.size > 20) {
+      const [k, u] = pdfCache.entries().next().value;
+      URL.revokeObjectURL(u);
+      pdfCache.delete(k);
+    }
+    return url;
+  }
+
+  function previewBox() {
+    let box = document.getElementById(PREVIEW_ID);
+    if (box) return box;
+    box = el(
+      'div',
+      'position:fixed;z-index:2147483600;width:max(360px,34vw);height:88vh;background:#fff;border-radius:8px;' +
+        'box-shadow:0 14px 40px rgba(0,0,0,.35);display:none;flex-direction:column;overflow:hidden;font:12px system-ui,Segoe UI,Arial'
+    );
+    box.id = PREVIEW_ID;
+    const head = el('div', 'padding:6px 10px;background:#5b45f5;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis');
+    const body = el('div', 'flex:1;position:relative;background:#525659');
+    box.append(head, body);
+    box.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+    box.addEventListener('mouseleave', () => hidePreview());
+    document.body.appendChild(box);
+    return box;
+  }
+
+  function placeBox(box, td) {
+    const r = td.getBoundingClientRect();
+    const w = box.offsetWidth;
+    const h = box.offsetHeight;
+    // Colonne « Nom du fichier » à droite du tableau : aperçu à gauche de la cellule si possible.
+    let left = r.left - w - 12;
+    if (left < 8) left = Math.min(r.right + 12, window.innerWidth - w - 8);
+    let top = Math.min(Math.max(8, r.top - h / 3), window.innerHeight - h - 8);
+    box.style.left = Math.max(8, left) + 'px';
+    box.style.top = Math.max(8, top) + 'px';
+  }
+
+  async function showPreview(td) {
+    const tr = td.closest('tr');
+    const achat = tr && achatOfRow(tr);
+    if (!achat || !achat.document) return;
+    const box = previewBox();
+    const [head, body] = box.children;
+    currentId = achat.id;
+    head.textContent = `${fileName(achat).replace(/\.pdf$/, '')}`;
+    body.replaceChildren(el('div', 'color:#fff;padding:16px', 'Chargement du PDF…'));
+    box.style.display = 'flex';
+    placeBox(box, td);
+    try {
+      const url = await pdfUrl(achat);
+      if (currentId !== achat.id || box.style.display === 'none') return;
+      const f = el('iframe', 'border:0;width:100%;height:100%;position:absolute;inset:0');
+      f.src = url + '#toolbar=0&navpanes=0&view=FitH';
+      body.replaceChildren(f);
+    } catch (e) {
+      if (currentId === achat.id) body.replaceChildren(el('div', 'color:#fecaca;padding:16px', 'Aperçu impossible : ' + (e.message || e)));
+    }
+  }
+
+  function hidePreview(now) {
+    clearTimeout(hoverTimer);
+    clearTimeout(hideTimer);
+    const go = () => {
+      const box = document.getElementById(PREVIEW_ID);
+      if (box) {
+        box.style.display = 'none';
+        box.children[1].replaceChildren();
+      }
+      currentId = null;
+    };
+    if (now) go();
+    else hideTimer = setTimeout(go, 250);
+  }
+
+  function installHover() {
+    document.addEventListener('mouseover', (e) => {
+      if (!PAGE_RE.test(location.pathname)) return;
+      const td = e.target.closest && e.target.closest('td.cdk-column-nomFichier');
+      if (!td) return;
+      clearTimeout(hideTimer);
+      clearTimeout(hoverTimer);
+      hoverTimer = setTimeout(() => showPreview(td), 350);
+    });
+    document.addEventListener('mouseout', (e) => {
+      const td = e.target.closest && e.target.closest('td.cdk-column-nomFichier');
+      if (!td || (e.relatedTarget && td.contains(e.relatedTarget))) return;
+      clearTimeout(hoverTimer);
+      hidePreview();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') hidePreview(true);
+    });
+    // Cases à cocher : le libellé du bouton suit la sélection.
+    document.addEventListener('change', () => setTimeout(refreshLabel, 0), true);
+    document.addEventListener('click', () => setTimeout(refreshLabel, 50), true);
   }
 
   ATM.onReady(() => {
@@ -348,6 +585,7 @@
       clearTimeout(t);
       t = setTimeout(ensureButton, 150);
     }).observe(document.body, { childList: true, subtree: true });
+    installHover();
     ensureButton();
   });
 })();

@@ -2,10 +2,12 @@
   "minExtensionVersion": "1.0.0",
   "licenceRequired": false,
   "release": {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "date": "2026-11-24",
     "notes": [
-      "Achats simplifiés : bouton « Télécharger les factures » — télécharge les PDF des factures non réglées, puis les passe en Réglé (mode Téléchargé)."
+      "Achats : aperçu de la facture au survol du nom du fichier.",
+      "Achats : si des factures sont cochées, seules celles-là sont téléchargées (bouton « Télécharger la sélection (n) »).",
+      "Achats : si le mode de règlement « Téléchargé » manque dans le dossier, l'extension propose de le créer."
     ]
   },
   "defaultMatches": [
