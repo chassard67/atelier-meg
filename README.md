@@ -10,6 +10,7 @@ Même mécanique que l'extension Atelier MyUnisoft.
 |---|---|
 | `achats-telechargement` | Page **Achats** : aperçu du PDF au survol de la colonne « Nom du fichier ». Bouton **« ⬇ Télécharger les factures »** (ou **« Télécharger la sélection (n) »** si des cases sont cochées : seules celles-là sont traitées). Pour chaque facture *non réglée* (ou partiellement réglée) : télécharge le PDF dans `Téléchargements\<Société>\Fournisseur - JJ-MM-AAAA - N°.pdf` (suffixe ` (1)` si le nom existe déjà), puis la passe en **Réglé**, mode **Téléchargé**, date du jour. La facture n'est passée en réglé qu'une fois le fichier réellement écrit. |
 | (affichage) | Page Achats : **« Affichage personnalisé LGA »** (par défaut, mémorisé dans Chrome) — colonnes Affectation, Liaison bancaire, Compte comptable, Source, Date d'import masquées ; boutons Exporter / Importer / ⋮, cartes de statistiques et filtres (sauf Rechercher) masqués ; statuts « Non téléchargé / Téléchargé », onglets « À télécharger / Téléchargé », colonne **« Téléchargé par »** (dernier utilisateur ayant passé la facture en Réglé, d'après le journal des évènements). **« Affichage classique »** = MEG d'origine, sans aucun ajout. |
+| `compteurs-dossiers` | Liste déroulante des dossiers (en-tête MEG) : nombre de factures à télécharger à côté de chaque dossier, sans les ouvrir (`statistiques-liste-achats` avec `X-IdEntreprise` du dossier, 6 en parallèle, cache 15 min, ↻ pour recompter). Affichage LGA uniquement. |
 | `socle` | Versions dans la console, fenêtre « mise à jour activée ». |
 
 **Mode de règlement *Téléchargé*** : s'il manque dans le dossier, le module propose de le créer
@@ -76,7 +77,7 @@ de Chrome, toutes les 30 min et à l'ouverture d'une page MEG — au plus toutes
 ## API MEG utilisée (relevée le 24/11/2026)
 
 Hôte `https://rest.mon-expert-en-gestion.fr`, en-têtes `Authorization: Bearer …` (capté sur les requêtes de
-l'appli) + `X-IdEntreprise`, cookies inclus.
+l'appli, ou `sessionStorage['0-meg-front'].authzData`) + `X-IdEntreprise`, cookies inclus.
 
 | Appel | Usage |
 |---|---|
@@ -86,6 +87,7 @@ l'appli) + `X-IdEntreprise`, cookies inclus.
 | `GET /ac/rest/achats-simplifies/modes-reglement` | Modes de règlement (`id`, `code`, `libelle`) |
 | `POST /ac/rest/achats-simplifies/{id}/modifier-echeances` | Corps : tableau d'échéances `{id, version, type, dateEcheance, montant, multiReglement, idModeReglement, statutPaiement: "REGLE", reglement: {dateReglement}}` |
 | `GET /ac/rest/commun/utilisateur?withCompanies=true` | `listeEntreprises[{id, name}]` → nom de la société |
+| `GET /ac/rest/achats-simplifies/statistiques-liste-achats` (+ `X-IdEntreprise` de n'importe quel dossier accessible) | `nombreFactureBonAPayer` (= onglet À télécharger), `nombreFactureTotal`, … |
 | `GET /ac/rest/journalEvenements?dateDebut&dateFin` | Journal des évènements (`listeEvenementsBean[{dateHeure, utilisateur, objet, action, evenement}]`) → colonne « Téléchargé par » |
 | `GET /portail/rest/parametres/listes/reglement/liste` | Modes de règlement paramétrés (`personnalisee`) — sans `X-IdEntreprise` |
 | `POST /portail/rest/parametres/listes/reglement/update` | Création d'un mode : `{ordre, finMois, code, libelle, delai, compteComptable, type, jourPrecis, parDefaut, idEntrepriseEncrypted}` (= valeur de `X-IdEntreprise`) |

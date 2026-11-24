@@ -8,11 +8,10 @@
   "announcement": null,
   "licenceRequired": false,
   "release": {
-    "version": "2.0.0",
+    "version": "2.1.0",
     "date": "2026-11-24",
     "notes": [
-      "Extension 2.0.0 : dernière installation manuelle. Ensuite, tout se met à jour depuis GitHub.",
-      "Pour que l'extension elle-même se mette aussi à jour seule : double-clic une fois sur maj\\activer-maj-auto.cmd dans le dossier de l'extension."
+      "Liste des dossiers (en-tête MEG) : nombre de factures à télécharger affiché à côté de chaque dossier, sans ouvrir les dossiers (↻ pour recompter)."
     ]
   },
   "defaultMatches": [
@@ -20,7 +19,8 @@
   ],
   "order": [
     "socle",
-    "achats-telechargement"
+    "achats-telechargement",
+    "compteurs-dossiers"
   ],
   "required": [
     "socle"
@@ -34,6 +34,12 @@
           "type": "module",
           "id": "achats-telechargement",
           "label": "Téléchargement en lot des factures (Achats simplifiés)",
+          "default": true
+        },
+        {
+          "type": "module",
+          "id": "compteurs-dossiers",
+          "label": "Nombre de factures à télécharger dans la liste des dossiers",
           "default": true
         }
       ]
