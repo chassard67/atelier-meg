@@ -8,10 +8,10 @@
   "announcement": null,
   "licenceRequired": false,
   "release": {
-    "version": "2.2.0",
+    "version": "2.2.1",
     "date": "2026-11-24",
     "notes": [
-      "Achats : boutons « 🖨 Télécharger et imprimer » (en haut et dans le bandeau de sélection) : téléchargement habituel, puis fusion des PDF dans l'ordre du tableau et impression."
+      "Achats : « 🖨 Télécharger et imprimer » — téléchargement, fusion des PDF dans l'ordre du tableau et impression ; les factures ne passent en Téléchargé qu'après confirmation que l'impression s'est bien passée (et seulement si tout a été téléchargé et fusionné)."
     ]
   },
   "defaultMatches": [
