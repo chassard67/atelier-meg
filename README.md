@@ -8,12 +8,12 @@ Même mécanique que l'extension Atelier MyUnisoft.
 
 | Module | Rôle |
 |---|---|
-| `achats-telechargement` | Page **Achats** : bouton **« ⬇ Télécharger les factures »**. Pour chaque facture *non réglée* (ou partiellement réglée) : télécharge le PDF dans `Téléchargements\<Société>\Fournisseur - JJ-MM-AAAA - N°.pdf` (suffixe ` (1)` si le nom existe déjà), puis la passe en **Réglé**, mode **Téléchargé**, date du jour. La facture n'est passée en réglé qu'une fois le fichier réellement écrit. |
+| `achats-telechargement` | Page **Achats** : aperçu du PDF au survol de la colonne « Nom du fichier ». Bouton **« ⬇ Télécharger les factures »** (ou **« Télécharger la sélection (n) »** si des cases sont cochées : seules celles-là sont traitées). Pour chaque facture *non réglée* (ou partiellement réglée) : télécharge le PDF dans `Téléchargements\<Société>\Fournisseur - JJ-MM-AAAA - N°.pdf` (suffixe ` (1)` si le nom existe déjà), puis la passe en **Réglé**, mode **Téléchargé**, date du jour. La facture n'est passée en réglé qu'une fois le fichier réellement écrit. |
 | `socle` | Versions dans la console, fenêtre « mise à jour activée ». |
 
-**Prérequis par dossier MEG** : le mode de règlement *Téléchargé* doit exister.
-Paramètres → Listes par défaut → Modes de règlement → Ajouter : code `TELECHARGE`, libellé `Téléchargé`,
-délai 0 jours, compte comptable `99999999`. Sans lui, le module s'arrête et l'indique.
+**Mode de règlement *Téléchargé*** : s'il manque dans le dossier, le module propose de le créer
+(Paramètres → Listes par défaut → Modes de règlement : code `TELECHARGE`, libellé `Téléchargé`, délai 0, type Virement,
+compte comptable `99999999`).
 
 Les factures **planifiées** (paiement programmé) ne sont pas traitées.
 
@@ -54,6 +54,10 @@ l'appli) + `X-IdEntreprise`, cookies inclus.
 | `GET /ac/rest/achats-simplifies/modes-reglement` | Modes de règlement (`id`, `code`, `libelle`) |
 | `POST /ac/rest/achats-simplifies/{id}/modifier-echeances` | Corps : tableau d'échéances `{id, version, type, dateEcheance, montant, multiReglement, idModeReglement, statutPaiement: "REGLE", reglement: {dateReglement}}` |
 | `GET /ac/rest/commun/utilisateur?withCompanies=true` | `listeEntreprises[{id, name}]` → nom de la société |
+| `GET /portail/rest/parametres/listes/reglement/liste` | Modes de règlement paramétrés (`personnalisee`) — sans `X-IdEntreprise` |
+| `POST /portail/rest/parametres/listes/reglement/update` | Création d'un mode : `{ordre, finMois, code, libelle, delai, compteComptable, type, jourPrecis, parDefaut, idEntrepriseEncrypted}` (= valeur de `X-IdEntreprise`) |
+
+La liste `modes-reglement` côté Achats renvoie aussi les versions supprimées (`isActive: false`) : toujours filtrer.
 
 ## Documentation
 
