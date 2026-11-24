@@ -8,10 +8,10 @@
   "announcement": null,
   "licenceRequired": false,
   "release": {
-    "version": "2.1.1",
+    "version": "2.2.0",
     "date": "2026-11-24",
     "notes": [
-      "Liste des dossiers : le dossier ouvert est recompté en priorité à chaque page, les autres en arrière-plan dès l'arrivée sur MEG (sans ouvrir la liste)."
+      "Achats : boutons « 🖨 Télécharger et imprimer » (en haut et dans le bandeau de sélection) : téléchargement habituel, puis fusion des PDF dans l'ordre du tableau et impression."
     ]
   },
   "defaultMatches": [
@@ -19,13 +19,18 @@
   ],
   "order": [
     "socle",
+    "pdf-lib",
     "achats-telechargement",
     "compteurs-dossiers"
   ],
   "required": [
     "socle"
   ],
-  "dependencies": {},
+  "dependencies": {
+    "achats-telechargement": [
+      "pdf-lib"
+    ]
+  },
   "catalog": [
     {
       "group": "Achats",

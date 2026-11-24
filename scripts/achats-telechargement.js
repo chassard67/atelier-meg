@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Achats : téléchargement en lot des factures
 // @namespace    https://nicolas.chassard/meg
-// @version      1.4.0
-// @description  v1.4.0 (2026-11-24) : colonne « Téléchargé par » (affichage LGA), tirée du journal des évènements MEG.
+// @version      1.5.0
+// @description  v1.5.0 (2026-11-24) : boutons « Télécharger et imprimer » : même traitement que Télécharger, puis les PDF
+//               sont fusionnés (ordre du tableau) et la fenêtre d'impression s'ouvre.
+//               v1.4.0 (2026-11-24) : colonne « Téléchargé par » (affichage LGA), tirée du journal des évènements MEG.
 //               v1.3.0 (2026-11-24) : « Affichage personnalisé LGA » (page Achats épurée) / « Affichage classique » (MEG
 //               d'origine) ; « Télécharger la sélection » dans le bandeau de sélection.
 //               v1.2.0 (2026-11-24) : libellés « Non téléchargé / Téléchargé », onglets « À télécharger / Téléchargé »,
@@ -19,6 +21,10 @@
 // ==/UserScript==
 
 // CHANGELOG
+// 1.5.0 (2026-11-24) — « 🖨 Télécharger et imprimer » (en haut : toutes les factures non téléchargées ; dans le bandeau :
+//                      la sélection) : téléchargement + passage en Téléchargé comme d'habitude, puis fusion des PDF
+//                      (pdf-lib, ordre du tableau) et impression ; la fusion n'est pas enregistrée. Liste complète triée
+//                      comme le tableau de MEG (date d'import décroissante).
 // 1.4.0 (2026-11-24) — colonne « Téléchargé par » après « Règlement » (affichage LGA) : utilisateur qui a passé
 //                      la facture en Réglé en dernier (journal des évènements), date et heure en info-bulle.
 // 1.3.0 (2026-11-24) — bascule « Affichage personnalisé LGA » / « Affichage classique » (mémorisée dans ce Chrome,
@@ -136,7 +142,7 @@
   async function listAchatsNonRegles() {
     const out = [];
     for (let page = 0; page < 100; page++) {
-      const q = new URLSearchParams({ page: String(page), size: '50', sort: 'dateEmission,asc', filter: 'etat:in:' + ETATS });
+      const q = new URLSearchParams({ page: String(page), size: '50', sort: 'dateAjout,desc', filter: 'etat:in:' + ETATS });
       const r = await api('GET', '/ac/rest/achats-simplifies?' + q);
       out.push(...((r && r.data) || []));
       if (!r || page + 1 >= (r.totalPages || 1)) break;
@@ -285,7 +291,9 @@
     const btnStop = el('button', 'background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer', 'Arrêter');
     const btnClose = el('button', 'background:#5b45f5;color:#fff;border:0;border-radius:6px;padding:7px 16px;font:inherit;cursor:pointer', 'Fermer et actualiser');
     btnClose.hidden = true;
-    foot.append(btnStop, btnClose);
+    const btnPdf = el('button', 'background:#fff;color:#5b45f5;border:1px solid #5b45f5;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer;margin-right:auto', '🖨 Réimprimer / ouvrir le PDF fusionné');
+    btnPdf.hidden = true;
+    foot.append(btnPdf, btnStop, btnClose);
     box.append(head, status, barWrap, log, foot);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
@@ -318,6 +326,10 @@
           yes.focus();
         });
       },
+      offerPdf(onClick) {
+        btnPdf.hidden = false;
+        btnPdf.onclick = onClick;
+      },
       finish() {
         btnStop.hidden = true;
         btnClose.hidden = false;
@@ -341,7 +353,7 @@
   // ---------------------------------------------------------------------------
   let running = false;
 
-  async function run({ selection: parSelection = false } = {}) {
+  async function run({ selection: parSelection = false, imprimer = false } = {}) {
     if (running) return;
     // Factures cochées (bandeau de sélection) : seules celles-là sont traitées (lues AVANT d'afficher la fenêtre).
     const coches = parSelection ? selectedRows() : [];
@@ -351,6 +363,7 @@
     const ui = panel();
     let ok = 0;
     let ko = 0;
+    const aImprimer = []; // PDF des factures traitées, dans l'ordre du tableau
     try {
       if (coches.length && selection.some((a) => !a)) {
         throw new Error('Impossible de relier les lignes cochées aux factures : actualisez la page (F5) puis recochez.');
@@ -410,6 +423,7 @@
           // 1. Télécharger le PDF et l'enregistrer.
           const { buf, type } = await api('GET', links['url-document'].href, { binary: true });
           if (!isPdf(buf)) throw new Error('le document reçu n\'est pas un PDF (' + (type || 'type inconnu') + ')');
+          if (imprimer) aImprimer.push(buf.slice(0));
           const saved = await ATM.download(toDataUrl(buf, 'application/pdf'), `${societe}/${nom}`, 'uniquify');
 
           // 2. Seulement une fois le fichier écrit : passer la facture en Réglé / Téléchargé.
@@ -436,11 +450,22 @@
           ui.line(`${fichier} — réglée (Téléchargé, ${frDate(date)})`, 'ok');
         } catch (e) {
           ko++;
+          if (imprimer && aImprimer.length > ok) aImprimer.length = ok; // facture en erreur : pas imprimée
           ui.line(`${nom} — ${e.message || e}`, 'err');
         }
       }
       ui.progress(1, 1);
       ui.status(`Terminé : ${ok} facture(s) téléchargée(s)` + (ko ? `, ${ko} en erreur` : '') + '.');
+      if (imprimer && aImprimer.length) {
+        ui.line(`Fusion de ${aImprimer.length} PDF pour l'impression…`);
+        const url = await fusionner(aImprimer);
+        const go = () => imprimerPdf(url);
+        ui.offerPdf(() => window.open(url, '_blank'));
+        ui.line('Fenêtre d\'impression ouverte (sinon : bouton « Réimprimer / ouvrir le PDF fusionné »).', 'ok');
+        go();
+      } else if (imprimer) {
+        ui.line('Rien à imprimer.', 'warn');
+      }
     } catch (e) {
       ui.status('Erreur');
       ui.line(e.message || String(e), 'err');
@@ -448,6 +473,40 @@
       ui.finish();
       running = false;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fusion (pdf-lib, module « pdf-lib ») et impression
+  // ---------------------------------------------------------------------------
+  async function fusionner(buffers) {
+    const PDFLib = window.PDFLib;
+    if (!PDFLib || !PDFLib.PDFDocument) throw new Error('bibliothèque PDF non chargée : rechargez la page (F5)');
+    const doc = await PDFLib.PDFDocument.create();
+    for (const b of buffers) {
+      const src = await PDFLib.PDFDocument.load(b, { ignoreEncryption: true });
+      const pages = await doc.copyPages(src, src.getPageIndices());
+      pages.forEach((p) => doc.addPage(p));
+    }
+    const bytes = await doc.save();
+    return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  }
+
+  function imprimerPdf(url) {
+    const old = document.getElementById('atm-print-frame');
+    if (old) old.remove();
+    const f = el('iframe', 'position:fixed;right:0;bottom:0;width:2px;height:2px;border:0;opacity:0;pointer-events:none');
+    f.id = 'atm-print-frame';
+    f.onload = () =>
+      setTimeout(() => {
+        try {
+          f.contentWindow.focus();
+          f.contentWindow.print();
+        } catch (e) {
+          window.open(url, '_blank');
+        }
+      }, 600);
+    f.src = url;
+    document.body.appendChild(f);
   }
 
   // ---------------------------------------------------------------------------
@@ -465,6 +524,8 @@
     const existing = document.getElementById(BTN_ID);
     if (!isLga()) {
       if (existing) existing.remove();
+      const ep = document.getElementById(BTN_ID + '-print');
+      if (ep) ep.remove();
       hidePreview(true);
       return;
     }
@@ -481,6 +542,16 @@
       run();
     });
     importer.parentElement.insertBefore(b, importer);
+    const p = el('button', btnStyle(importer.offsetHeight) + ';margin-right:8px', '🖨 Télécharger et imprimer');
+    p.id = BTN_ID + '-print';
+    p.type = 'button';
+    p.title = 'Comme « Télécharger les factures », puis fusionne les PDF et ouvre l\'impression';
+    p.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      run({ imprimer: true });
+    });
+    importer.parentElement.insertBefore(p, importer);
   }
 
   // Bandeau « n éléments sélectionnés » de MEG : la suppression est masquée (CSS),
@@ -502,9 +573,24 @@
       });
       zone.appendChild(b);
     }
+    let p = document.getElementById(MASS_BTN_ID + '-print');
+    if (!p) {
+      p = el('button', btnStyle(30) + ';border-color:#fff;margin-left:8px');
+      p.id = MASS_BTN_ID + '-print';
+      p.type = 'button';
+      p.title = 'Télécharge la sélection, puis fusionne les PDF et ouvre l\'impression';
+      p.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        run({ selection: true, imprimer: true });
+      });
+      zone.appendChild(p);
+    }
     const n = selectedRows().length;
     const label = `⬇ Télécharger la sélection (${n})`;
     if (b.textContent !== label) b.textContent = label;
+    const labelP = `🖨 Télécharger et imprimer (${n})`;
+    if (p.textContent !== labelP) p.textContent = labelP;
   }
 
   // ---------------------------------------------------------------------------
@@ -536,7 +622,7 @@ html.atm-lga achat-liste-achats .cdk-column-liaisonBancaire,
 html.atm-lga achat-liste-achats .cdk-column-comptesComptables,
 html.atm-lga achat-liste-achats .cdk-column-sourceAffichee,
 html.atm-lga achat-liste-achats .cdk-column-dateAjout,
-html.atm-lga #mass-action-buttons > :not(#${MASS_BTN_ID}) { display: none !important; }
+html.atm-lga #mass-action-buttons > :not([id^="${MASS_BTN_ID}"]) { display: none !important; }
 `;
 
   function filtresMasquesDansUrl() {
