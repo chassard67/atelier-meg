@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Atelier MEG",
   "short_name": "Atelier MEG",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Outils pour Mon Expert en Gestion (MEG) : téléchargement en lot des factures d'achat, etc. Les modules se mettent à jour automatiquement.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwql8lbK4MENevpfbdRIujSvARI236aCZuPN9aAKALrKnrTPwR4qPgsYVgJAt8RJ3U38hvvwJzwNW5cLGkqHfOAGxUvcCuwozEoGXd/quAgQbSJPsnx9MfFNqi/zrtPdgNf0XkXKJu7J0BfdKwDnyqhNcTNhWaeIPDYFVdAPss5QVttgkOd+Rs+EUSclxf/3KrDpMIJqpyE7mq0ujaQc8/ipIfzqqn8DBBeewe1N2l+uQhC5XvAiwnqXE+pTgRlN30St1UnuBZhzK+mO065yIS0ZUWbJjAloyfOg1X2SATrfmELdzSXiWC2tzt19l1fsj75bECfTZMjiVm9DqflLl0wIDAQAB",
   "minimum_chrome_version": "120",

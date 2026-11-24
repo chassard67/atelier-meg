@@ -465,15 +465,38 @@ function cleanPath(p) {
     .join('/');
 }
 
+// Nom imposé au moment où Chrome détermine le nom du fichier : sans cela, une
+// autre extension qui écoute onDeterminingFilename (ou Chrome lui-même pour une
+// URL data:) remplace le nom demandé par « téléchargement (n).pdf ».
+const pendingNames = new Map(); // url → { filename, conflictAction }
+chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+  if (item.byExtensionId === chrome.runtime.id) {
+    const p = pendingNames.get(item.url) || pendingNames.get(item.finalUrl);
+    if (p) {
+      suggest({ filename: p.filename, conflictAction: p.conflictAction });
+      return;
+    }
+  }
+  suggest();
+});
+
 async function downloadFile({ url, filename, conflictAction = 'uniquify' }) {
   if (!/^data:/.test(String(url))) throw new Error('Seules les données (data:) sont acceptées');
   const name = cleanPath(filename);
   if (!name) throw new Error('Nom de fichier vide');
-  const id = await chrome.downloads.download({ url, filename: name, conflictAction, saveAs: false });
+  pendingNames.set(url, { filename: name, conflictAction });
+  let id;
+  try {
+    id = await chrome.downloads.download({ url, filename: name, conflictAction, saveAs: false });
+  } catch (e) {
+    pendingNames.delete(url);
+    throw e;
+  }
   return new Promise((resolve, reject) => {
     const done = (item) => {
       chrome.downloads.onChanged.removeListener(listener);
       clearTimeout(timer);
+      pendingNames.delete(url);
       if (item.state === 'complete') resolve({ id, filename: item.filename });
       else reject(new Error('Téléchargement interrompu : ' + (item.error || item.state)));
     };
@@ -486,6 +509,7 @@ async function downloadFile({ url, filename, conflictAction = 'uniquify' }) {
     };
     const timer = setTimeout(() => {
       chrome.downloads.onChanged.removeListener(listener);
+      pendingNames.delete(url);
       reject(new Error('Téléchargement trop long (délai dépassé)'));
     }, 120000);
     chrome.downloads.onChanged.addListener(listener);

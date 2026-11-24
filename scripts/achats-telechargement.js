@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Achats : téléchargement en lot des factures
 // @namespace    https://nicolas.chassard/meg
-// @version      1.1.0
-// @description  v1.1.0 (2026-11-24) : aperçu du PDF au survol du nom de fichier ; seules les factures cochées sont
+// @version      1.2.0
+// @description  v1.2.0 (2026-11-24) : libellés « Non téléchargé / Téléchargé », onglets « À télécharger / Téléchargé »,
+//               onglets « À traiter » et « À affecter » masqués ; bouton ✕ sur l'aperçu ; nom de fichier contrôlé.
+//               v1.1.0 (2026-11-24) : aperçu du PDF au survol du nom de fichier ; seules les factures cochées sont
 //               traitées s'il y en a ; création automatique du mode « Téléchargé » s'il manque (avec confirmation).
 //               v1.0.0 (2026-11-24) : bouton « Télécharger les factures » sur Achats simplifiés. Télécharge le PDF de
 //               chaque facture non réglée dans Téléchargements/<Société>/« Fournisseur - JJ-MM-AAAA - N°.pdf »,
@@ -14,6 +16,10 @@
 // ==/UserScript==
 
 // CHANGELOG
+// 1.2.0 (2026-11-24) — statuts renommés (Non réglé → Non téléchargé, Réglé → Téléchargé), onglets renommés
+//                      (À régler → À télécharger, Réglé → Téléchargé), onglets À traiter / À affecter masqués ;
+//                      bouton ✕ pour fermer l'aperçu ; la facture n'est passée en réglé que si le fichier porte le bon nom
+//                      (nécessite l'extension 1.1.0, qui impose le nom au téléchargement).
 // 1.1.0 (2026-11-24) — aperçu PDF au survol de la colonne « Nom du fichier » ; factures cochées = seules traitées ;
 //                      proposition de créer le mode TELECHARGE (Paramètres > Listes par défaut) s'il manque.
 // 1.0.0 (2026-11-24) — première version.
@@ -393,7 +399,17 @@
           const saved = await ATM.download(toDataUrl(buf, 'application/pdf'), `${societe}/${nom}`, 'uniquify');
 
           // 2. Seulement une fois le fichier écrit : passer la facture en Réglé / Téléchargé.
-          const fichier = String((saved && saved.filename) || nom).split(/[\\/]/).pop();
+          const chemin = String((saved && saved.filename) || '');
+          const fichier = chemin.split(/[\\/]/).pop();
+          // Le nom réel doit être celui demandé (au suffixe « (1) » près) : sinon on ne règle pas.
+          const attendu = nom.replace(/\.pdf$/i, '').toLowerCase();
+          const obtenu = fichier.replace(/\.pdf$/i, '').replace(/\s\(\d+\)$/, '').toLowerCase();
+          if (obtenu !== attendu) {
+            throw new Error(
+              `fichier enregistré sous « ${fichier} » au lieu du nom demandé : facture laissée non réglée. ` +
+                'Mettez à jour l\'extension (icône Atelier MEG → pastille EXT) puis relancez.'
+            );
+          }
           if (dejaReglee) {
             ok++;
             ui.line(`${fichier} — téléchargée (déjà réglée : règlement inchangé)`, 'ok');
@@ -498,7 +514,16 @@
         'box-shadow:0 14px 40px rgba(0,0,0,.35);display:none;flex-direction:column;overflow:hidden;font:12px system-ui,Segoe UI,Arial'
     );
     box.id = PREVIEW_ID;
-    const head = el('div', 'padding:6px 10px;background:#5b45f5;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis');
+    const head = el('div', 'display:flex;align-items:center;gap:8px;padding:4px 6px 4px 10px;background:#5b45f5;color:#fff;font-weight:600');
+    const title = el('span', 'flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis');
+    const close = el('button', 'flex:none;width:26px;height:26px;border:0;border-radius:5px;background:rgba(255,255,255,.18);color:#fff;font:700 15px/1 system-ui;cursor:pointer', '✕');
+    close.type = 'button';
+    close.title = 'Fermer l\'aperçu (Échap)';
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hidePreview(true);
+    });
+    head.append(title, close);
     const body = el('div', 'flex:1;position:relative;background:#525659');
     box.append(head, body);
     box.addEventListener('mouseenter', () => clearTimeout(hideTimer));
@@ -526,7 +551,7 @@
     const box = previewBox();
     const [head, body] = box.children;
     currentId = achat.id;
-    head.textContent = `${fileName(achat).replace(/\.pdf$/, '')}`;
+    head.firstChild.textContent = fileName(achat).replace(/\.pdf$/, '');
     body.replaceChildren(el('div', 'color:#fff;padding:16px', 'Chargement du PDF…'));
     box.style.display = 'flex';
     placeBox(box, td);
@@ -579,12 +604,50 @@
     document.addEventListener('click', () => setTimeout(refreshLabel, 50), true);
   }
 
+  // ---------------------------------------------------------------------------
+  // Libellés : « réglé » devient « téléchargé » ; onglets inutiles masqués
+  // ---------------------------------------------------------------------------
+  const CHIP_LABELS = { 'Non réglé': 'Non téléchargé', 'Réglé': 'Téléchargé' };
+  const TAB_LABELS = [
+    [/^À régler(\s*\(\d+\))?$/, 'À télécharger'],
+    [/^Réglé(\s*\(\d+\))?$/, 'Téléchargé'],
+  ];
+  const HIDDEN_TABS = /^À (traiter|affecter)(\s*\(\d+\))?$/;
+
+  function setText(node, text) {
+    // Remplace le texte du premier nœud texte non vide (garde les commentaires Angular).
+    const tn = [...node.childNodes].find((n) => n.nodeType === 3 && n.data.trim());
+    if (tn && tn.data !== text) tn.data = text;
+  }
+
+  function relabel() {
+    if (!PAGE_RE.test(location.pathname)) return;
+    for (const c of document.querySelectorAll('rca-chips .chips-content')) {
+      const t = c.textContent.trim();
+      if (CHIP_LABELS[t]) setText(c, CHIP_LABELS[t] + ' ');
+    }
+    for (const lab of document.querySelectorAll('[role=tab] .mdc-tab__text-label')) {
+      const t = lab.textContent.trim();
+      const tab = lab.closest('[role=tab]');
+      if (HIDDEN_TABS.test(t)) {
+        if (tab.style.display !== 'none') tab.style.display = 'none';
+        continue;
+      }
+      for (const [re, label] of TAB_LABELS) {
+        const m = t.match(re);
+        if (m) setText(lab, label + (m[1] || ''));
+      }
+    }
+  }
+
   ATM.onReady(() => {
     let t = null;
     new MutationObserver(() => {
+      relabel();
       clearTimeout(t);
       t = setTimeout(ensureButton, 150);
-    }).observe(document.body, { childList: true, subtree: true });
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    relabel();
     installHover();
     ensureButton();
   });

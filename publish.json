@@ -1,13 +1,13 @@
 {
-  "minExtensionVersion": "1.0.0",
+  "minExtensionVersion": "1.1.0",
   "licenceRequired": false,
   "release": {
-    "version": "1.1.0",
+    "version": "1.2.0",
     "date": "2026-11-24",
     "notes": [
-      "Achats : aperçu de la facture au survol du nom du fichier.",
-      "Achats : si des factures sont cochées, seules celles-là sont téléchargées (bouton « Télécharger la sélection (n) »).",
-      "Achats : si le mode de règlement « Téléchargé » manque dans le dossier, l'extension propose de le créer."
+      "Achats : les factures sont enregistrées sous « Fournisseur - JJ-MM-AAAA - N°.pdf » (nécessite l'extension 1.1.0).",
+      "Achats : statuts « Non téléchargé / Téléchargé », onglets « À télécharger / Téléchargé » ; onglets À traiter et À affecter masqués.",
+      "Achats : bouton ✕ pour fermer l'aperçu de la facture."
     ]
   },
   "defaultMatches": [
