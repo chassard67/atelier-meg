@@ -669,6 +669,79 @@ async function storeSet(key, value) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Code de sécurité MEG (OTP / TOTP, RFC 6238)
+// ---------------------------------------------------------------------------
+// Le secret (clé base32 fournie par MEG lors de l'activation) est saisi par
+// l'utilisateur dans la fenêtre de l'extension et stocké LOCALEMENT ici, à
+// l'écart de « cfg » pour ne jamais partir dans le contexte des pages. Le code
+// à 6 chiffres est calculé dans ce service worker ; la page n'en reçoit que les
+// 6 chiffres, jamais le secret.
+
+function base32Decode(str) {
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const s = String(str || '')
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/=+$/, '');
+  if (!s) return null;
+  let bits = 0;
+  let val = 0;
+  const out = [];
+  for (const c of s) {
+    const i = A.indexOf(c);
+    if (i < 0) return null;
+    val = (val << 5) | i;
+    bits += 5;
+    if (bits >= 8) {
+      out.push((val >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return new Uint8Array(out);
+}
+
+async function computeTotp(secretB32, { digits = 6, period = 30, t = Date.now() } = {}) {
+  const key = base32Decode(secretB32);
+  if (!key || !key.length) throw new Error('secret OTP invalide');
+  const counter = Math.floor(t / 1000 / period);
+  const buf = new ArrayBuffer(8);
+  const view = new DataView(buf);
+  view.setUint32(0, Math.floor(counter / 2 ** 32));
+  view.setUint32(4, counter >>> 0);
+  const ck = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', ck, buf));
+  const off = sig[sig.length - 1] & 0xf;
+  const bin = ((sig[off] & 0x7f) << 24) | (sig[off + 1] << 16) | (sig[off + 2] << 8) | sig[off + 3];
+  const code = (bin % 10 ** digits).toString().padStart(digits, '0');
+  const secondsRemaining = period - Math.floor((t / 1000) % period);
+  return { code, secondsRemaining, period };
+}
+
+async function getOtp() {
+  const { otp } = await chrome.storage.local.get('otp');
+  return otp || {};
+}
+async function setOtpSecret(secret) {
+  const s = String(secret || '').replace(/\s+/g, '').toUpperCase();
+  if (!base32Decode(s) || !base32Decode(s).length) {
+    throw new Error('Clé secrète invalide (format attendu : lettres A-Z et chiffres 2-7).');
+  }
+  // Vérifie que le calcul fonctionne avant d'enregistrer.
+  await computeTotp(s);
+  await chrome.storage.local.set({ otp: { secret: s, savedAt: Date.now() } });
+  return { hasSecret: true };
+}
+async function clearOtp() {
+  await chrome.storage.local.remove('otp');
+  return { hasSecret: false };
+}
+async function otpCode() {
+  const { secret } = await getOtp();
+  if (!secret) return { hasSecret: false };
+  return { hasSecret: true, ...(await computeTotp(secret)) };
+}
+
 // API Chrome utilisables par les modules sans modifier la coquille : ATM.chrome('downloads.show', id), etc.
 const CHROME_API = new Set([
   'downloads.search',
@@ -703,12 +776,14 @@ async function chromeApi({ api, args = [] }, sender) {
 
 const PAGE_HANDLERS = {
   chrome: chromeApi,
-  info: async () => ({ extVersion: EXT_VERSION, capabilities: [...CHROME_API, 'http', 'download', 'store', 'notices'] }),
+  info: async () => ({ extVersion: EXT_VERSION, capabilities: [...CHROME_API, 'http', 'download', 'store', 'notices', 'otp-code'] }),
   http: proxyHttp,
   'store-get': ({ key }) => storeGet(key),
   'store-set': ({ key, value }) => storeSet(key, value),
   ping: () => ({ extVersion: EXT_VERSION }),
   download: downloadFile,
+  // Code de sécurité MEG : la page ne reçoit que les 6 chiffres, jamais le secret.
+  'otp-code': otpCode,
   // Ex-webFrame.setZoomFactor d'Electron : zoom propre à l'onglet.
   'set-zoom': async ({ factor }, sender) => {
     const f = Number(factor);
@@ -782,6 +857,12 @@ async function handlePopup(msg) {
     case 'set-licence':
       await patchConfig({ licenceKey: normalizeKey(msg.key) });
       return checkForUpdates('manual', { fresh: true });
+    case 'otp-status':
+      return otpCode();
+    case 'otp-set':
+      return setOtpSecret(msg.secret);
+    case 'otp-clear':
+      return clearOtp();
     case 'set-base-url': {
       let url = String(msg.baseUrl || '').trim();
       if (url && !url.endsWith('/')) url += '/';

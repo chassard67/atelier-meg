@@ -1,5 +1,5 @@
 {
-  "minExtensionVersion": "2.0.0",
+  "minExtensionVersion": "2.1.0",
   "config": {
     "checkIntervalMin": 30,
     "pageCheckMinutes": 5,
@@ -8,10 +8,11 @@
   "announcement": null,
   "licenceRequired": false,
   "release": {
-    "version": "2.5.0",
-    "date": "2026-11-24",
+    "version": "2.6.0",
+    "date": "2026-11-25",
     "notes": [
-      "Achats : cochez les factures, le bandeau propose l'action adaptée — Télécharger (puis impression groupée), Marquer non téléchargées, ou un choix si la sélection mélange les deux."
+      "Code de sécurité MEG (OTP) : saisissez une fois votre clé secrète dans la fenêtre de l'extension ; le code à 6 chiffres est ensuite rempli automatiquement sur la page de connexion, et « se souvenir de cet appareil » est coché. Le secret reste sur votre poste et ne transite jamais par la page.",
+      "Nécessite l'extension 2.1.0 (mise à jour automatique)."
     ]
   },
   "defaultMatches": [
@@ -21,7 +22,8 @@
     "socle",
     "pdf-lib",
     "achats-telechargement",
-    "compteurs-dossiers"
+    "compteurs-dossiers",
+    "otp-remplissage"
   ],
   "required": [
     "socle"
@@ -46,6 +48,23 @@
           "id": "compteurs-dossiers",
           "label": "Nombre de factures à télécharger dans la liste des dossiers",
           "default": true
+        }
+      ]
+    },
+    {
+      "group": "Code de sécurité (OTP)",
+      "items": [
+        {
+          "type": "module",
+          "id": "otp-remplissage",
+          "label": "Remplir le code de sécurité à la connexion MEG/RCA",
+          "default": true
+        },
+        {
+          "type": "setting",
+          "id": "otpAutoSubmit",
+          "label": "Valider automatiquement après remplissage du code",
+          "default": false
         }
       ]
     }

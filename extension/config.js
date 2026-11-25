@@ -27,6 +27,7 @@ export const LICENCE_GRACE_DAYS = 14;
 
 // Notes affichées aux utilisateurs quand la COQUILLE elle-même est mise à jour.
 export const EXTENSION_NOTES = {
+  '2.1.0': ['Gestion du code de sécurité MEG (OTP) : saisissez une fois votre clé secrète dans l\'extension, le code est rempli automatiquement à la connexion.'],
   '2.0.0': [
     'Extension « socle stable » : les nouvelles fonctionnalités arrivent toutes par mise à jour automatique depuis GitHub.',
     'Avec la mise à jour automatique activée (dossier maj), l\'extension elle-même se met aussi à jour seule.',

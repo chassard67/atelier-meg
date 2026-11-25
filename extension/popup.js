@@ -252,7 +252,67 @@ $('reset-defaults').addEventListener('click', async () => {
   showReloadHint();
 });
 
+// --- Code de sécurité MEG (OTP) ------------------------------------------
+let otpTimer = null;
+async function renderOtp() {
+  let st;
+  try {
+    st = await send('otp-status');
+  } catch (e) {
+    st = { hasSecret: false };
+  }
+  $('otp-active').hidden = !st.hasSecret;
+  $('otp-setup').hidden = !!st.hasSecret;
+  if (st.hasSecret) {
+    $('otp-code').textContent = (st.code || '').replace(/(\d{3})(\d{3})/, '$1 $2');
+    $('otp-remaining').textContent = st.secondsRemaining != null ? ` · nouveau dans ${st.secondsRemaining}s` : '';
+  }
+}
+function startOtpTicker() {
+  clearInterval(otpTimer);
+  otpTimer = setInterval(renderOtp, 1000);
+}
+
+$('otp-show').addEventListener('click', () => {
+  const i = $('otp-secret');
+  i.type = i.type === 'password' ? 'text' : 'password';
+  $('otp-show').textContent = i.type === 'password' ? 'Afficher' : 'Masquer';
+});
+
+$('otp-save').addEventListener('click', async () => {
+  const err = $('otp-error');
+  err.hidden = true;
+  const secret = $('otp-secret').value;
+  if (!secret.trim()) return;
+  try {
+    await send('otp-set', { secret });
+    $('otp-secret').value = '';
+    await renderOtp();
+  } catch (e) {
+    err.hidden = false;
+    err.textContent = String(e.message || e);
+  }
+});
+
+$('otp-forget').addEventListener('click', async () => {
+  if (!confirm('Oublier la clé secrète OTP enregistrée sur ce poste ? Le code devra de nouveau être saisi à la main (ou reconfiguré ici).')) return;
+  await send('otp-clear');
+  await renderOtp();
+});
+
+$('otp-copy').addEventListener('click', async () => {
+  const st = await send('otp-status');
+  if (st && st.code) {
+    try {
+      await navigator.clipboard.writeText(st.code);
+      $('otp-copy').textContent = 'Copié ✔';
+      setTimeout(() => ($('otp-copy').textContent = 'Copier le code'), 1500);
+    } catch (e) {}
+  }
+});
+
 // À l'ouverture : si le bouton vient d'être activé, on (ré)enregistre les modules.
 render().then((st) => {
   if (st.userScripts) send('reapply').catch(() => {});
 });
+renderOtp().then(startOtpTicker);

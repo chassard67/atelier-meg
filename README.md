@@ -10,6 +10,7 @@ Même mécanique que l'extension Atelier MyUnisoft.
 |---|---|
 | `achats-telechargement` | Page **Achats** : consigne « Cochez les factures à télécharger ou à imprimer » ; le **bandeau de sélection** propose l'action adaptée : **⬇ Télécharger** (non téléchargées), **↩ Marquer non téléchargées** (déjà téléchargées — annule uniquement les règlements en mode Téléchargé), ou **Que faire ?** (sélection mixte : avertissement + choix). Après le téléchargement, proposition de **fusionner toutes les factures en un PDF à imprimer** (ordre du tableau, fusion non enregistrée) ; passage en Téléchargé à la fin — après confirmation de l'impression si on imprime. Aperçu du PDF au survol de la colonne « Nom du fichier ». Bouton **« ⬇ Télécharger les factures »** (ou **« Télécharger la sélection (n) »** si des cases sont cochées : seules celles-là sont traitées). Pour chaque facture *non réglée* (ou partiellement réglée) : télécharge le PDF dans `Téléchargements\<Société>\Fournisseur - JJ-MM-AAAA - N°.pdf` (suffixe ` (1)` si le nom existe déjà), puis la passe en **Réglé**, mode **Téléchargé**, date du jour. La facture n'est passée en réglé qu'une fois le fichier réellement écrit. |
 | (affichage) | Page Achats : **« Affichage personnalisé LGA »** (par défaut, mémorisé dans Chrome) — colonnes Affectation, Liaison bancaire, Compte comptable, Source, Date d'import masquées ; boutons Exporter / Importer / ⋮, cartes de statistiques et filtres (sauf Rechercher) masqués ; statuts « Non téléchargé / Téléchargé », onglets « À télécharger / Téléchargé », colonne **« Téléchargé par »** (dernier utilisateur ayant passé la facture en Réglé, d'après le journal des évènements). **« Affichage classique »** = MEG d'origine, sans aucun ajout. |
+| `otp-remplissage` | Page de connexion RCA/MEG (`connect.monespace.rca.fr`) : remplit le code de sécurité à 6 chiffres (TOTP) et coche « se souvenir de cet appareil ». Le secret est saisi dans la fenêtre de l'extension et **calculé dans le service worker** — il ne transite jamais par la page (`ATM.call('otp-code')` ne renvoie que les 6 chiffres). Réglage « Valider automatiquement » (désactivé par défaut). |
 | `pdf-lib` | Bibliothèque pdf-lib 1.17.1 (MIT, licence dans `docs/LICENCE-pdf-lib.md`) : `window.PDFLib`, utilisée pour fusionner les PDF. |
 | `compteurs-dossiers` | Liste déroulante des dossiers (en-tête MEG) : nombre de factures à télécharger à côté de chaque dossier, sans les ouvrir (`statistiques-liste-achats` avec `X-IdEntreprise` du dossier) : dossier ouvert recompté en priorité à chaque page, les autres en arrière-plan (3 en parallèle, 15 min de validité par dossier, reprise après changement de page, un seul onglet à la fois, ↻ pour tout recompter). Affichage LGA uniquement. |
 | `socle` | Versions dans la console, fenêtre « mise à jour activée ». |
@@ -53,6 +54,17 @@ La coquille (`extension/`) est conçue pour ne plus changer : tout passe par les
 Reste manuel : la toute première installation (mode développeur + « Autoriser les scripts utilisateur ») et le
 double-clic sur `activer-maj-auto.cmd`. Alternative 100 % automatique : extension empaquetée (.crx) déployée par stratégie
 Chrome (GPO/Intune `ExtensionInstallForcelist`) si le cabinet gère ses postes.
+
+## Code de sécurité MEG (OTP)
+
+L'extension peut mémoriser la clé secrète TOTP du compte (6 chiffres / 30 s, RFC 6238) pour remplir le code à la
+connexion. La clé est saisie **une fois** dans la fenêtre de l'extension (Profil MEG → Application d'authentification →
+clé secrète), stockée dans `chrome.storage.local` **de ce poste uniquement** (jamais dans le dépôt), et le code est
+calculé dans le service worker de l'extension. Le module de page ne reçoit que les 6 chiffres.
+
+> Compromis de sécurité : la clé et la session cohabitent alors sur le même poste. Sur une machine déverrouillée ou
+> infectée, le second facteur ne protège plus. C'est le même principe que les extensions de type Keeper que RCA
+> recommande. À chacun d'évaluer selon la sécurité de son poste. « Oublier le secret » dans l'extension le supprime.
 
 ## Dépendance à la publication GitHub (extension ≥ 1.4.0)
 

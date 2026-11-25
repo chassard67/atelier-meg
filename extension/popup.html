@@ -38,6 +38,31 @@
 
   <section id="announcement" class="alert info small" hidden></section>
 
+  <section id="otp-box">
+    <h2>Code de sécurité MEG (OTP)</h2>
+    <div id="otp-active" hidden>
+      <div class="alert info small">
+        Code actuel : <strong id="otp-code" style="font:600 16px Consolas,monospace;letter-spacing:2px"></strong>
+        <span id="otp-remaining" class="muted"></span>
+      </div>
+      <div class="row gap">
+        <button id="otp-copy">Copier le code</button>
+        <button id="otp-forget">Oublier le secret</button>
+      </div>
+    </div>
+    <div id="otp-setup">
+      <p class="small muted">Saisissez une fois la « clé secrète » affichée par MEG lors de l'activation (Profil → Application d'authentification). Elle reste sur ce poste et sert à remplir le code à la connexion.</p>
+      <label class="field">Clé secrète (base32)
+        <input type="password" id="otp-secret" spellcheck="false" autocomplete="off" placeholder="XXXX XXXX XXXX XXXX">
+      </label>
+      <div class="row gap">
+        <button id="otp-save" class="primary">Enregistrer</button>
+        <button id="otp-show" type="button">Afficher</button>
+      </div>
+      <div id="otp-error" class="alert danger small" hidden></div>
+    </div>
+  </section>
+
   <section id="warn-source" class="alert warning small" hidden>
     Les modules sont lus depuis une source non officielle : <code id="warn-source-url"></code>.
     <button id="fix-source" class="primary">Revenir à la source officielle</button>
