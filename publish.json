@@ -8,11 +8,11 @@
   "announcement": null,
   "licenceRequired": false,
   "release": {
-    "version": "2.6.0",
-    "date": "2026-11-25",
+    "version": "2.7.0",
+    "date": "2026-11-27",
     "notes": [
-      "Code de sécurité MEG (OTP) : saisissez une fois votre clé secrète dans la fenêtre de l'extension ; le code à 6 chiffres est ensuite rempli automatiquement sur la page de connexion, et « se souvenir de cet appareil » est coché. Le secret reste sur votre poste et ne transite jamais par la page.",
-      "Nécessite l'extension 2.1.0 (mise à jour automatique)."
+      "Achats (LGA) : colonnes réduites à l'essentiel ; « Émission » → « Date de facture », « Nom du fichier » → « Facture PDF » ; badge « Affichage personnalisé LGA » en orange ; « Retour à l'affichage classique » ; consigne de sélection centrée et agrandie.",
+      "Achats : l'impression groupée n'est proposée qu'à partir de 2 factures ; question reformulée « Voulez-vous imprimer toutes les factures en une seule fois ? ». Bouton « Arrêter » retiré ; bouton « Fermer »."
     ]
   },
   "defaultMatches": [

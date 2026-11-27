@@ -1,8 +1,11 @@
 // ==UserScript==
 // @name         Achats : téléchargement en lot des factures
 // @namespace    https://nicolas.chassard/meg
-// @version      1.9.0
-// @description  v1.9.0 (2026-11-24) : plus de bouton en haut (consigne « cochez les factures ») ; le bandeau de sélection
+// @version      1.10.0
+// @description  v1.10.0 (2026-11-27) : colonnes LGA limitées à l'essentiel, « Date de facture »/« Facture PDF », badge LGA
+//               orange, consigne centrée ; impression groupée seulement à partir de 2 factures, nouveau libellé ; bouton
+//               Arrêter retiré, « Fermer ».
+//               v1.9.0 (2026-11-24) : plus de bouton en haut (consigne « cochez les factures ») ; le bandeau de sélection
 //               propose l'action adaptée (télécharger / marquer non téléchargé / choix si sélection mixte).
 //               v1.8.0 (2026-11-24) : factures cochées = seules traitées, quel que soit le bouton ; bouton « Remettre en
 //               Non téléchargé » pour annuler un téléchargement fait par erreur.
@@ -30,6 +33,13 @@
 // ==/UserScript==
 
 // CHANGELOG
+// 1.10.0 (2026-11-27) — LGA : colonnes réduites à Statut, Téléchargé par, Fournisseur, N° facture, Date de facture,
+//                       Total TTC, Facture PDF (+ menu) ; « Émission » → « Date de facture », « Nom du fichier » →
+//                       « Facture PDF » ; « Téléchargé par » placé après Statut ; badge « Affichage personnalisé LGA »
+//                       orange ; lien « Retour à l'affichage classique » ; consigne centrée et agrandie. Impression :
+//                       plus proposée s'il n'y a qu'une facture ; question « Voulez-vous imprimer toutes les factures en
+//                       une seule fois ? » (Non met à jour les statuts et ferme). Bouton « Arrêter » retiré ; bouton
+//                       « Fermer ».
 // 1.9.0 (2026-11-24) — bouton du haut supprimé, remplacé par la consigne « Cochez les factures à télécharger ou à
 //                      imprimer ». Bandeau de sélection, un seul bouton selon les factures cochées :
 //                      non téléchargées → « ⬇ Télécharger (n) » (puis proposition d'impression groupée) ;
@@ -321,18 +331,21 @@
     barWrap.appendChild(bar);
     const log = el('div', 'padding:4px 18px;overflow:auto;flex:1;min-height:120px;font-size:12px;color:#374151');
     const foot = el('div', 'padding:10px 18px 14px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #eee');
-    const btnStop = el('button', 'background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer', 'Arrêter');
-    const btnClose = el('button', 'background:#5b45f5;color:#fff;border:0;border-radius:6px;padding:7px 16px;font:inherit;cursor:pointer', 'Fermer et actualiser');
+    const btnClose = el('button', 'background:#5b45f5;color:#fff;border:0;border-radius:6px;padding:7px 16px;font:inherit;cursor:pointer', 'Fermer');
     btnClose.hidden = true;
     const btnPdf = el('button', 'background:#fff;color:#5b45f5;border:1px solid #5b45f5;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer;margin-right:auto', '🖨 Réimprimer');
     btnPdf.hidden = true;
-    foot.append(btnPdf, btnStop, btnClose);
+    foot.append(btnPdf, btnClose);
     box.append(head, status, barWrap, log, foot);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
 
     const ui = {
       stopped: false,
+      closeAndReload() {
+        overlay.remove();
+        location.reload();
+      },
       status: (t) => (status.textContent = t),
       progress: (i, n) => (bar.style.width = n ? Math.round((i / n) * 100) + '%' : '0'),
       line(text, kind) {
@@ -367,15 +380,9 @@
         overlay.remove();
       },
       finish() {
-        btnStop.hidden = true;
         btnClose.hidden = false;
         btnClose.focus();
       },
-    };
-    btnStop.onclick = () => {
-      ui.stopped = true;
-      btnStop.disabled = true;
-      btnStop.textContent = 'Arrêt après la facture en cours…';
     };
     btnClose.onclick = () => {
       overlay.remove();
@@ -439,10 +446,6 @@
       );
 
       for (let i = 0; i < achats.length; i++) {
-        if (ui.stopped) {
-          ui.line(`Arrêt demandé : ${achats.length - i} facture(s) non traitée(s).`, 'warn');
-          break;
-        }
         const a = achats[i];
         const nom = fileName(a);
         ui.progress(i, achats.length);
@@ -532,33 +535,36 @@
     return faits;
   }
 
-  // Fin du téléchargement : proposition de fusion/impression, puis passage en Téléchargé.
+  // Fin du téléchargement : proposition d'impression groupée, puis passage en Téléchargé.
   async function finaliser(ui, { aImprimer, aRegler, ko, mode, date }) {
     if (!aImprimer.length) return;
     const n = aImprimer.length;
-    // Erreur ou arrêt : pas de fusion ; seules les factures bien téléchargées passent en Téléchargé.
-    if (ui.stopped || ko) {
-      ui.line(
-        (ui.stopped ? 'Traitement arrêté' : `${ko} facture(s) en erreur`) + ' : pas de fusion pour impression.',
-        'warn'
-      );
+    // Erreur : pas de fusion ; seules les factures bien téléchargées passent en Téléchargé.
+    if (ko) {
+      ui.line(`${ko} facture(s) en erreur : pas d'impression groupée.`, 'warn');
       const faits = await passerEnTelecharge(ui, aRegler, mode, date);
       ui.status(`Terminé : ${n} facture(s) téléchargée(s), ${faits} passée(s) en Téléchargé, ${ko} en erreur.`);
       return;
     }
-    ui.status(`${n} facture(s) téléchargée(s).`);
-    const fusion = await ui.ask(
-      `${n} facture(s) téléchargée(s).\nFusionner toutes les factures en un PDF à imprimer ?` +
-        (aRegler.length ? `\n(Les ${aRegler.length} facture(s) passeront en Téléchargé après l'impression.)` : ''),
-      '🖨 Oui, fusionner et imprimer',
-      'Non, terminer'
-    );
-    if (!fusion) {
-      const faits = await passerEnTelecharge(ui, aRegler, mode, date);
-      ui.status(`Terminé : ${n} facture(s) téléchargée(s), ${faits} passée(s) en Téléchargé.`);
+    // Une seule facture : pas d'impression groupée à proposer, on marque et on ferme.
+    if (n < 2) {
+      await passerEnTelecharge(ui, aRegler, mode, date);
+      ui.closeAndReload();
       return;
     }
-    ui.status(`Fusion de ${n} PDF…`);
+    ui.status(`${n} facture(s) téléchargée(s).`);
+    const fusion = await ui.ask(
+      `${n} facture(s) téléchargée(s).\nVoulez-vous imprimer toutes les factures en une seule fois ?`,
+      '🖨 Oui, imprimer',
+      'Non'
+    );
+    if (!fusion) {
+      // Non : on met à jour les statuts puis on ferme la fenêtre (elle actualise la liste).
+      await passerEnTelecharge(ui, aRegler, mode, date);
+      ui.closeAndReload();
+      return;
+    }
+    ui.status(`Préparation de l'impression (${n} factures)…`);
     let url;
     try {
       url = await fusionner(aImprimer);
@@ -629,16 +635,18 @@
       return;
     }
     if (existing) return;
-    const importer = findImporter();
-    if (!importer || !importer.parentElement) return;
-    // Consigne à la place de l'ancien bouton : tout passe par la sélection (bandeau).
+    const liste = document.querySelector('achat-liste-achats');
+    if (!liste) return;
+    const ancre = liste.querySelector('.barre-actions') || liste.querySelector('.table-wrapper') || liste.querySelector('table');
+    if (!ancre || !ancre.parentElement) return;
+    // Consigne centrée, bien visible : tout passe par la sélection (bandeau de MEG).
     const b = el(
-      'span',
-      'display:inline-flex;align-items:center;gap:6px;margin-right:8px;color:#5b45f5;font:600 13px system-ui,Segoe UI,Arial;white-space:nowrap',
-      '☑ Cochez les factures à télécharger ou à imprimer'
+      'div',
+      'text-align:center;margin:6px 0 10px;color:#5b45f5;font:700 17px system-ui,Segoe UI,Arial',
+      '☑ Cochez une ou plusieurs factures pour les télécharger'
     );
     b.id = BTN_ID;
-    importer.parentElement.insertBefore(b, importer);
+    ancre.parentElement.insertBefore(b, ancre);
   }
 
   // Bandeau « n éléments sélectionnés » de MEG : la suppression est masquée (CSS) ; un seul bouton, adapté à la
@@ -821,6 +829,11 @@ html.atm-lga achat-liste-achats .cdk-column-liaisonBancaire,
 html.atm-lga achat-liste-achats .cdk-column-comptesComptables,
 html.atm-lga achat-liste-achats .cdk-column-sourceAffichee,
 html.atm-lga achat-liste-achats .cdk-column-dateAjout,
+html.atm-lga achat-liste-achats .cdk-column-dateEcheance,
+html.atm-lga achat-liste-achats .cdk-column-totalHt,
+html.atm-lga achat-liste-achats .cdk-column-totalTva,
+html.atm-lga achat-liste-achats .cdk-column-dateReglement,
+html.atm-lga achat-liste-achats .cdk-column-commentaire,
 html.atm-lga #mass-action-buttons > :not([id^="${MASS_BTN_ID}"]) { display: none !important; }
 `;
 
@@ -895,14 +908,16 @@ html.atm-lga #mass-action-buttons > :not([id^="${MASS_BTN_ID}"]) { display: none
     box.id = TOGGLE_ID;
     box.dataset.mode = lga ? 'lga' : 'classique';
     if (lga) {
-      box.appendChild(el('span', 'background:#ede9fe;color:#5b45f5;font-weight:600;border-radius:12px;padding:4px 12px', 'Affichage personnalisé LGA'));
-      const b = el('button', 'background:none;border:0;color:#6b7280;text-decoration:underline;cursor:pointer;font:inherit;padding:0', 'Affichage classique');
+      box.appendChild(
+        el('span', 'background:#f97316;color:#fff;font-weight:700;border-radius:12px;padding:4px 12px', 'Affichage personnalisé LGA')
+      );
+      const b = el('button', 'background:none;border:0;color:#6b7280;text-decoration:underline;cursor:pointer;font:inherit;padding:0', 'Retour à l\'affichage classique');
       b.type = 'button';
       b.title = 'Revenir à l\'affichage MEG d\'origine';
       b.onclick = () => setMode(false);
       box.appendChild(b);
     } else {
-      const b = el('button', btnStyle(28), 'Affichage personnalisé LGA');
+      const b = el('button', btnStyle(28).replace('color:#5b45f5', 'color:#fff').replace('background:#fff', 'background:#f97316').replace('border:1px solid #5b45f5', 'border:0'), 'Affichage personnalisé LGA');
       b.type = 'button';
       b.title = 'Page Achats épurée : téléchargement des factures, aperçu au survol';
       b.onclick = () => setMode(true);
@@ -1082,8 +1097,9 @@ html.atm-lga #mass-action-buttons > :not([id^="${MASS_BTN_ID}"]) { display: none
     if (!isLga()) return;
     const table = document.querySelector('achat-liste-achats table');
     if (!table) return;
+    // « Téléchargé par » juste après la colonne Statut (comme dans la maquette).
     const anchorCol = (row, tag) =>
-      row.querySelector(`${tag}.cdk-column-dateReglement`) || row.querySelector(`${tag}.cdk-column-etat`);
+      row.querySelector(`${tag}.cdk-column-etat`) || row.querySelector(`${tag}.cdk-column-dateReglement`);
     const hr = table.querySelector('thead tr');
     if (hr && !hr.querySelector('th.' + COL_CLASS)) {
       const a = anchorCol(hr, 'th');
@@ -1121,6 +1137,11 @@ html.atm-lga #mass-action-buttons > :not([id^="${MASS_BTN_ID}"]) { display: none
     [/^Réglé(\s*\(\d+\))?$/, 'Téléchargé'],
   ];
   const HIDDEN_TABS = /^À (traiter|affecter)(\s*\(\d+\))?$/;
+  // En-têtes de colonnes renommés.
+  const COL_RENAMES = [
+    ['dateEmission', 'Date de facture'],
+    ['nomFichier', 'Facture PDF'],
+  ];
 
   function setText(node, text) {
     // Remplace le texte du premier nœud texte non vide (garde les commentaires Angular).
@@ -1128,8 +1149,23 @@ html.atm-lga #mass-action-buttons > :not([id^="${MASS_BTN_ID}"]) { display: none
     if (tn && tn.data !== text) tn.data = text;
   }
 
+  // Remplace le libellé d'un en-tête de colonne, où qu'il soit (bouton de tri, span…).
+  function renameHeader(col, label) {
+    const th = document.querySelector('achat-liste-achats th.cdk-column-' + col);
+    if (!th) return;
+    const w = document.createTreeWalker(th, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = w.nextNode())) {
+      if (n.data.trim()) {
+        if (n.data !== label) n.data = label;
+        return;
+      }
+    }
+  }
+
   function relabel() {
     if (!isLga()) return;
+    for (const [col, label] of COL_RENAMES) renameHeader(col, label);
     for (const c of document.querySelectorAll('rca-chips .chips-content')) {
       const t = c.textContent.trim();
       if (CHIP_LABELS[t]) setText(c, CHIP_LABELS[t] + ' ');
