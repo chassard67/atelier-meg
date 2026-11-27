@@ -156,20 +156,33 @@ export function build({ zip = false } = {}) {
   );
   fs.writeFileSync(path.join(DIST, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
-  // Petite page d'accueil (lien de téléchargement de l'extension + versions).
+  // Page d'accueil = guide d'installation (site/index.html), avec substitution des
+  // versions. Repli sur une page minimale si le modèle est absent.
   const rows = scripts
     .map((s) => `<tr><td>${s.name}</td><td><code>${s.version}</code></td></tr>`)
     .join('');
-  fs.writeFileSync(
-    path.join(DIST, 'index.html'),
-    `<!doctype html><meta charset="utf-8"><title>Atelier MEG</title>
-<style>body{font:14px system-ui,Segoe UI,Arial;max-width:640px;margin:40px auto;color:#111}
-td{padding:4px 12px;border-bottom:1px solid #eee}code{font-family:Consolas,monospace}</style>
-<h1>Atelier MEG</h1>
-<p><a href="atelier-meg-extension.zip">Télécharger l'extension Chrome</a> (v${extManifest.version})
-— voir la procédure d'installation dans le dépôt (docs/INSTALLATION.md).</p>
-<p>Version ${manifest.release ? manifest.release.version : ''} — publication <code>${manifest.build}</code></p><table>${rows}</table>`
-  );
+  const tpl = path.join(ROOT, 'site', 'index.html');
+  if (fs.existsSync(tpl)) {
+    const html = fs
+      .readFileSync(tpl, 'utf8')
+      .replaceAll('{{EXT_VERSION}}', extManifest.version)
+      .replaceAll('{{RELEASE}}', manifest.release ? manifest.release.version : extManifest.version)
+      .replaceAll('{{BUILD}}', manifest.build)
+      .replaceAll('{{MODULE_ROWS}}', rows);
+    fs.writeFileSync(path.join(DIST, 'index.html'), html);
+    // Copie des éventuelles ressources du site (captures, images…).
+    for (const f of fs.readdirSync(path.join(ROOT, 'site'))) {
+      if (f === 'index.html') continue;
+      const src = path.join(ROOT, 'site', f);
+      if (fs.statSync(src).isFile()) fs.copyFileSync(src, path.join(DIST, f));
+    }
+  } else {
+    fs.writeFileSync(
+      path.join(DIST, 'index.html'),
+      `<!doctype html><meta charset="utf-8"><title>Atelier MEG</title>
+<p><a href="atelier-meg-extension.zip">Télécharger l'extension</a> (v${extManifest.version})</p><table>${rows}</table>`
+    );
+  }
 
   if (zip) {
     const out = path.join(DIST, 'atelier-meg-extension.zip');

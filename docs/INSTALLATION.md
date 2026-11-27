@@ -5,18 +5,18 @@ Durée : 3 minutes. Chrome à jour (version 120 minimum).
 ## 1. Télécharger
 
 1. Télécharger **atelier-meg-extension.zip** depuis https://chassard67.github.io/atelier-meg/
-2. Créer le dossier `C:\AtelierMEG\extension` et y **extraire** le zip.
+2. Créer le dossier `Documents\AtelierMEG\extension` et y **extraire** le zip.
    Garder toujours ce même dossier : les mises à jour de l'extension s'y feront.
 
 ## 2. Installer dans Chrome
 
 1. Ouvrir `chrome://extensions`.
 2. Activer **Mode développeur** (en haut à droite).
-3. **Charger l'extension non empaquetée** → choisir `C:\AtelierMEG\extension`.
+3. **Charger l'extension non empaquetée** → choisir `Documents\AtelierMEG\extension`.
 4. Sur la carte « Atelier MEG » → **Détails** → activer **Autoriser les scripts utilisateur**
    *(indispensable : sans ça, aucun module ne s'exécute)*.
 5. Icône puzzle 🧩 → **épingler** Atelier MEG.
-6. **Mise à jour automatique (une seule fois)** : dans `C:\AtelierMEG\extension\maj`, double-cliquer
+6. **Mise à jour automatique (une seule fois)** : dans `Documents\AtelierMEG\extension\maj`, double-cliquer
    **`activer-maj-auto.cmd`**. Une tâche planifiée Windows (sans droits administrateur) vérifie toutes les 2 heures et à
    chaque ouverture de session ; l'extension se recharge ensuite d'elle-même. Journal : `maj\maj.log`.
    (`desactiver-maj-auto.cmd` pour arrêter.)
@@ -43,5 +43,5 @@ Conseil : dans Chrome → Paramètres → Téléchargements, désactiver « Touj
 
 - **Modules (fonctionnalités)** : automatiques, sans rien faire (démarrage de Chrome, toutes les 30 min, ouverture de MEG).
 - **Extension elle-même** : automatique si l'étape 2.6 a été faite. Sinon, quand MEG affiche « Nouvelle version de
-  l'extension » : télécharger le zip, l'extraire par-dessus `C:\AtelierMEG\extension` — l'extension se recharge seule
+  l'extension » : télécharger le zip, l'extraire par-dessus `Documents\AtelierMEG\extension` — l'extension se recharge seule
   (plus besoin de ↻ dans chrome://extensions).
