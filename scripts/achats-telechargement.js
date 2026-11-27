@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Achats : téléchargement en lot des factures
 // @namespace    https://nicolas.chassard/meg
-// @version      1.10.0
-// @description  v1.10.0 (2026-11-27) : colonnes LGA limitées à l'essentiel, « Date de facture »/« Facture PDF », badge LGA
+// @version      1.11.0
+// @description  v1.11.0 (2026-11-27) : ré-essai automatique (après actualisation) avant tout message d'erreur ;
+//               consigne déplacée au-dessus des onglets (chevauchait le champ Rechercher).
+//               v1.10.0 (2026-11-27) : colonnes LGA limitées à l'essentiel, « Date de facture »/« Facture PDF », badge LGA
 //               orange, consigne centrée ; impression groupée seulement à partir de 2 factures, nouveau libellé ; bouton
 //               Arrêter retiré, « Fermer ».
 //               v1.9.0 (2026-11-24) : plus de bouton en haut (consigne « cochez les factures ») ; le bandeau de sélection
@@ -33,6 +35,11 @@
 // ==/UserScript==
 
 // CHANGELOG
+// 1.11.0 (2026-11-27) — toute opération en échec (téléchargement, passage en Téléchargé, remise en Non téléchargé,
+//                       création du mode TELECHARGE) est d'abord ré-essayée une fois après actualisation des données
+//                       (facture retrouvée par son numéro si son identifiant a changé) ; le message d'erreur n'apparaît
+//                       que si le second essai échoue aussi. Consigne « Cochez une ou plusieurs factures » déplacée
+//                       au-dessus des onglets (elle chevauchait le champ Rechercher).
 // 1.10.0 (2026-11-27) — LGA : colonnes réduites à Statut, Téléchargé par, Fournisseur, N° facture, Date de facture,
 //                       Total TTC, Facture PDF (+ menu) ; « Émission » → « Date de facture », « Nom du fichier » →
 //                       « Facture PDF » ; « Téléchargé par » placé après Statut ; badge « Affichage personnalisé LGA »
@@ -181,6 +188,25 @@
   }
 
   const linkOk = (l) => l && l.href && l.href !== '-';
+
+  // Erreur passagère : vaut la peine d'actualiser puis de réessayer une fois
+  // (facture ré-ingérée → nouvel identifiant = 404, conflit de version, réseau, 5xx…).
+  // 401/403 (session expirée) ne sont PAS ici : le message invite déjà à recharger.
+  const isTransient = (e) => /HTTP (404|409|412|423|425|428|429|5\d\d)\b|Erreur réseau|Réponse illisible|Failed to fetch|Délai|timeout/i.test(String((e && e.message) || e));
+
+  const cleFacture = (a) => (a ? (a.numeroFacture || '') + '|' + ((a.fournisseur && a.fournisseur.id) || '') : '');
+
+  // Liste fraîche de TOUTES les factures (tous états) → pour retrouver un identifiant à jour.
+  async function listerTout() {
+    const out = [];
+    for (let page = 0; page < 100; page++) {
+      const q = new URLSearchParams({ page: String(page), size: '50', sort: 'dateAjout,desc' });
+      const r = await api('GET', '/ac/rest/achats-simplifies?' + q);
+      out.push(...((r && r.data) || []));
+      if (!r || page + 1 >= (r.totalPages || 1)) break;
+    }
+    return out;
+  }
 
   async function listAchatsNonRegles() {
     const out = [];
@@ -396,6 +422,34 @@
   // ---------------------------------------------------------------------------
   let running = false;
 
+  // Télécharge le PDF d'une facture et prépare son passage en Téléchargé.
+  // Renvoie { fichier, buf, dejaReglee, regl } ou lève une erreur.
+  async function traiterFacture(a, societe, mode, date) {
+    const nom = fileName(a);
+    const detail = await api('GET', '/ac/rest/achats-simplifies/' + a.id);
+    const links = detail._links || {};
+    if (!linkOk(links['url-document'])) throw new Error('aucun document PDF attaché');
+    if (!(detail.echeances || []).length) throw new Error('aucune échéance à régler');
+    const dejaReglee = detail.echeances.every((e) => e.statutPaiement === 'REGLE');
+    const lienRegl = links['modifier-achat-echeances'];
+    if (!dejaReglee && !linkOk(lienRegl)) {
+      throw new Error('MEG ne permet pas de modifier le règlement' + (lienRegl && lienRegl.title ? ' (' + lienRegl.title + ')' : ''));
+    }
+    const { buf, type } = await api('GET', links['url-document'].href, { binary: true });
+    if (!isPdf(buf)) throw new Error('le document reçu n\'est pas un PDF (' + (type || 'type inconnu') + ')');
+    const saved = await ATM.download(toDataUrl(buf, 'application/pdf'), `${societe}/${nom}`, 'uniquify');
+    const fichier = String((saved && saved.filename) || '').split(/[\\/]/).pop();
+    const attendu = nom.replace(/\.pdf$/i, '').toLowerCase();
+    const obtenu = fichier.replace(/\.pdf$/i, '').replace(/\s\(\d+\)$/, '').toLowerCase();
+    if (obtenu !== attendu) {
+      throw new Error(
+        `fichier enregistré sous « ${fichier} » au lieu du nom demandé : facture laissée non réglée. ` +
+          'Mettez à jour l\'extension (icône Atelier MEG → pastille EXT) puis relancez.'
+      );
+    }
+    return { fichier, buf: buf.slice(0), dejaReglee, regl: dejaReglee ? null : { id: detail.id, detail, lienRegl } };
+  }
+
   async function run({ selection: parSelection = false } = {}) {
     if (running) return;
     // Factures cochées (bandeau de sélection) : seules celles-là sont traitées (lues AVANT d'afficher la fenêtre).
@@ -431,7 +485,13 @@
           ui.line('Annulé : aucun fichier téléchargé.', 'warn');
           return;
         }
-        mode = await creerModeTelecharge();
+        try {
+          mode = await creerModeTelecharge();
+        } catch (e) {
+          if (!isTransient(e)) throw e;
+          ui.line('Paramétrage impossible du premier coup — nouvel essai après actualisation…', 'warn');
+          mode = findMode(await api('GET', '/ac/rest/achats-simplifies/modes-reglement')) || (await creerModeTelecharge());
+        }
         if (!mode) throw new Error('Le mode TELECHARGE n\'a pas pu être créé (droits insuffisants ?). Créez-le à la main dans Paramètres.');
         ui.line('Mode de règlement « Téléchargé » créé dans ce dossier.', 'ok');
       }
@@ -445,52 +505,48 @@
         `${achats.length} facture(s) ${coches.length ? 'cochée(s)' : 'non réglée(s)'} — dossier Téléchargements\\${societe}`
       );
 
+      // En cas d'erreur passagère sur une facture (ex. identifiant périmé → 404), on
+      // actualise la liste une fois et on retrouve la facture par son numéro avant de réessayer.
+      let mapFraiche = null;
+      const fraiche = async (a) => {
+        if (!mapFraiche) {
+          mapFraiche = new Map();
+          for (const x of await listerTout()) mapFraiche.set(cleFacture(x), x);
+        }
+        return mapFraiche.get(cleFacture(a)) || a;
+      };
+
       for (let i = 0; i < achats.length; i++) {
         const a = achats[i];
         const nom = fileName(a);
         ui.progress(i, achats.length);
         ui.status(`(${i + 1}/${achats.length}) ${nom}`);
+        let res;
         try {
-          const detail = await api('GET', '/ac/rest/achats-simplifies/' + a.id);
-          const links = detail._links || {};
-          if (!linkOk(links['url-document'])) throw new Error('aucun document PDF attaché');
-          if (!(detail.echeances || []).length) throw new Error('aucune échéance à régler');
-          const dejaReglee = detail.echeances.every((e) => e.statutPaiement === 'REGLE');
-          const lienRegl = links['modifier-achat-echeances'];
-          if (!dejaReglee && !linkOk(lienRegl)) {
-            throw new Error('MEG ne permet pas de modifier le règlement' + (lienRegl && lienRegl.title ? ' (' + lienRegl.title + ')' : ''));
-          }
-
-          // 1. Télécharger le PDF et l'enregistrer.
-          const { buf, type } = await api('GET', links['url-document'].href, { binary: true });
-          if (!isPdf(buf)) throw new Error('le document reçu n\'est pas un PDF (' + (type || 'type inconnu') + ')');
-          aImprimer.push(buf.slice(0));
-          const saved = await ATM.download(toDataUrl(buf, 'application/pdf'), `${societe}/${nom}`, 'uniquify');
-
-          // 2. Seulement une fois le fichier écrit : passer la facture en Réglé / Téléchargé.
-          const chemin = String((saved && saved.filename) || '');
-          const fichier = chemin.split(/[\\/]/).pop();
-          // Le nom réel doit être celui demandé (au suffixe « (1) » près) : sinon on ne règle pas.
-          const attendu = nom.replace(/\.pdf$/i, '').toLowerCase();
-          const obtenu = fichier.replace(/\.pdf$/i, '').replace(/\s\(\d+\)$/, '').toLowerCase();
-          if (obtenu !== attendu) {
-            throw new Error(
-              `fichier enregistré sous « ${fichier} » au lieu du nom demandé : facture laissée non réglée. ` +
-                'Mettez à jour l\'extension (icône Atelier MEG → pastille EXT) puis relancez.'
-            );
-          }
-          if (dejaReglee) {
-            ok++;
-            ui.line(`${fichier} — téléchargée (déjà réglée : règlement inchangé)`, 'ok');
+          res = await traiterFacture(a, societe, mode, date);
+        } catch (e) {
+          if (isTransient(e)) {
+            ui.line(`${nom} — échec, actualisation puis nouvel essai…`, 'warn');
+            try {
+              res = await traiterFacture(await fraiche(a), societe, mode, date);
+            } catch (e2) {
+              ko++;
+              ui.line(`${nom} — ${e2.message || e2}`, 'err');
+              continue;
+            }
+          } else {
+            ko++;
+            ui.line(`${nom} — ${e.message || e}`, 'err');
             continue;
           }
-          ok++;
-          aRegler.push({ detail, lienRegl, fichier });
-          ui.line(`${fichier} — téléchargée`, 'ok');
-        } catch (e) {
-          ko++;
-          if (aImprimer.length > ok) aImprimer.length = ok; // facture en erreur : pas imprimée
-          ui.line(`${nom} — ${e.message || e}`, 'err');
+        }
+        ok++;
+        aImprimer.push(res.buf);
+        if (res.dejaReglee) {
+          ui.line(`${res.fichier} — téléchargée (déjà réglée : règlement inchangé)`, 'ok');
+        } else {
+          aRegler.push(res.regl);
+          ui.line(`${res.fichier} — téléchargée`, 'ok');
         }
       }
       ui.progress(1, 1);
@@ -521,11 +577,25 @@
     return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
   }
 
+  // Passe l'échéance en Téléchargé ; en cas d'erreur passagère, actualise le détail
+  // (versions d'échéances, lien à jour) puis réessaie une fois.
+  async function reglerUne(r, mode, date) {
+    try {
+      await api('POST', r.lienRegl.href, { body: echeancesReglees(r.detail, mode.id, date) });
+    } catch (e) {
+      if (!isTransient(e)) throw e;
+      const d = await api('GET', '/ac/rest/achats-simplifies/' + r.id);
+      const lien = (d._links || {})['modifier-achat-echeances'];
+      if (!linkOk(lien)) throw e;
+      await api('POST', lien.href, { body: echeancesReglees(d, mode.id, date) });
+    }
+  }
+
   async function passerEnTelecharge(ui, aRegler, mode, date) {
     let faits = 0;
     for (const r of aRegler) {
       try {
-        await api('POST', r.lienRegl.href, { body: echeancesReglees(r.detail, mode.id, date) });
+        await reglerUne(r, mode, date);
         faits++;
         ui.line(`${r.fichier} — passée en Téléchargé (${frDate(date)})`, 'ok');
       } catch (e) {
@@ -637,12 +707,12 @@
     if (existing) return;
     const liste = document.querySelector('achat-liste-achats');
     if (!liste) return;
-    const ancre = liste.querySelector('.barre-actions') || liste.querySelector('.table-wrapper') || liste.querySelector('table');
+    // Au-dessus des onglets (zone dégagée) : la barre de filtres remonte et chevaucherait la consigne.
+    const ancre = liste.querySelector('mat-tab-group');
     if (!ancre || !ancre.parentElement) return;
-    // Consigne centrée, bien visible : tout passe par la sélection (bandeau de MEG).
     const b = el(
       'div',
-      'text-align:center;margin:6px 0 10px;color:#5b45f5;font:700 17px system-ui,Segoe UI,Arial',
+      'text-align:center;margin:2px 0 12px;color:#5b45f5;font:700 17px system-ui,Segoe UI,Arial',
       '☑ Cochez une ou plusieurs factures pour les télécharger'
     );
     b.id = BTN_ID;
@@ -725,6 +795,34 @@
   // ---------------------------------------------------------------------------
   // Remettre en « Non téléchargé » (annulation d'un téléchargement fait par erreur)
   // ---------------------------------------------------------------------------
+  // Annule le règlement « Téléchargé » d'une facture. Renvoie { status:'fait' } ou
+  // { status:'ignore', raison } ; lève une erreur (ré-essayée en amont si passagère).
+  async function annulerUne(a, mode) {
+    const detail = await api('GET', '/ac/rest/achats-simplifies/' + a.id);
+    const ech = detail.echeances || [];
+    const aAnnuler = (e) => e.statutPaiement === 'REGLE' && mode && e.idModeReglement === mode.id;
+    if (!ech.some(aAnnuler)) {
+      return { status: 'ignore', raison: ech.some((e) => e.statutPaiement === 'REGLE') ? 'réglée par un autre mode que « Téléchargé »' : 'pas en Téléchargé' };
+    }
+    const lien = (detail._links || {})['modifier-achat-echeances'];
+    if (!linkOk(lien)) throw new Error('MEG ne permet pas de modifier le règlement' + (lien && lien.title ? ' (' + lien.title + ')' : ''));
+    const body = ech.map((e) => {
+      const base = {
+        id: e.id,
+        version: e.version,
+        type: e.type,
+        dateEcheance: e.dateEcheance,
+        idModeReglement: e.idModeReglement,
+        montant: e.montant,
+        multiReglement: !!e.multiReglement,
+      };
+      if (aAnnuler(e)) return { ...base, statutPaiement: 'EN_ATTENTE' };
+      return e.statutPaiement === 'REGLE' ? { ...base, statutPaiement: 'REGLE', reglement: e.reglement } : { ...base, statutPaiement: e.statutPaiement };
+    });
+    await api('POST', lien.href, { body });
+    return { status: 'fait' };
+  }
+
   async function remettreNonTelecharge(lignes) {
     if (running) return;
     const coches = lignes || selectedRows();
@@ -748,41 +846,42 @@
       }
       let faits = 0;
       let ignores = 0;
+      let mapFraiche = null;
+      const fraiche = async (a) => {
+        if (!mapFraiche) {
+          mapFraiche = new Map();
+          for (const x of await listerTout()) mapFraiche.set(cleFacture(x), x);
+        }
+        return mapFraiche.get(cleFacture(a)) || a;
+      };
       for (let i = 0; i < achats.length; i++) {
         const a = achats[i];
         const nom = fileName(a).replace(/\.pdf$/i, '');
         ui.progress(i, achats.length);
         ui.status(`(${i + 1}/${achats.length}) ${nom}`);
+        let r;
         try {
-          const detail = await api('GET', '/ac/rest/achats-simplifies/' + a.id);
-          const ech = detail.echeances || [];
-          const aAnnuler = (e) => e.statutPaiement === 'REGLE' && mode && e.idModeReglement === mode.id;
-          if (!ech.some(aAnnuler)) {
-            ignores++;
-            const autre = ech.some((e) => e.statutPaiement === 'REGLE');
-            ui.line(`${nom} — inchangée (${autre ? 'réglée par un autre mode que « Téléchargé »' : 'pas en Téléchargé'})`, 'warn');
+          r = await annulerUne(a, mode);
+        } catch (e) {
+          if (isTransient(e)) {
+            ui.line(`${nom} — échec, actualisation puis nouvel essai…`, 'warn');
+            try {
+              r = await annulerUne(await fraiche(a), mode);
+            } catch (e2) {
+              ui.line(`${nom} — ${e2.message || e2}`, 'err');
+              continue;
+            }
+          } else {
+            ui.line(`${nom} — ${e.message || e}`, 'err');
             continue;
           }
-          const lien = (detail._links || {})['modifier-achat-echeances'];
-          if (!linkOk(lien)) throw new Error('MEG ne permet pas de modifier le règlement' + (lien && lien.title ? ' (' + lien.title + ')' : ''));
-          const body = ech.map((e) => {
-            const base = {
-              id: e.id,
-              version: e.version,
-              type: e.type,
-              dateEcheance: e.dateEcheance,
-              idModeReglement: e.idModeReglement,
-              montant: e.montant,
-              multiReglement: !!e.multiReglement,
-            };
-            if (aAnnuler(e)) return { ...base, statutPaiement: 'EN_ATTENTE' };
-            return e.statutPaiement === 'REGLE' ? { ...base, statutPaiement: 'REGLE', reglement: e.reglement } : { ...base, statutPaiement: e.statutPaiement };
-          });
-          await api('POST', lien.href, { body });
+        }
+        if (r.status === 'fait') {
           faits++;
           ui.line(`${nom} — remise en Non téléchargé`, 'ok');
-        } catch (e) {
-          ui.line(`${nom} — ${e.message || e}`, 'err');
+        } else {
+          ignores++;
+          ui.line(`${nom} — inchangée (${r.raison})`, 'warn');
         }
       }
       ui.progress(1, 1);

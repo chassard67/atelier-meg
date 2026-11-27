@@ -8,11 +8,11 @@
   "announcement": null,
   "licenceRequired": false,
   "release": {
-    "version": "2.7.0",
+    "version": "2.8.0",
     "date": "2026-11-27",
     "notes": [
-      "Achats (LGA) : colonnes réduites à l'essentiel ; « Émission » → « Date de facture », « Nom du fichier » → « Facture PDF » ; badge « Affichage personnalisé LGA » en orange ; « Retour à l'affichage classique » ; consigne de sélection centrée et agrandie.",
-      "Achats : l'impression groupée n'est proposée qu'à partir de 2 factures ; question reformulée « Voulez-vous imprimer toutes les factures en une seule fois ? ». Bouton « Arrêter » retiré ; bouton « Fermer »."
+      "Achats : en cas d'échec passager (ex. identifiant de facture périmé), l'opération est ré-essayée une fois automatiquement après actualisation avant d'afficher une erreur.",
+      "Achats : la consigne « Cochez une ou plusieurs factures » ne chevauche plus le champ Rechercher."
     ]
   },
   "defaultMatches": [

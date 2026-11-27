@@ -64,8 +64,9 @@
       <a href="#prerequis">Prérequis</a>
       <a href="#etape1">1. Télécharger</a>
       <a href="#etape2">2. Décompresser</a>
-      <a href="#etape3">3. Mode développeur</a>
-      <a href="#etape4">4. Charger</a>
+      <a href="#etape3">3. Chrome</a>
+      <a href="#etape3bis">3 bis. Edge</a>
+      <a href="#etape4">4. Sélectionner le dossier</a>
       <a href="#etape5">5. Scripts utilisateur</a>
       <a href="#etape6">6. Épingler</a>
       <a href="#etape7">7. Mise à jour auto</a>
@@ -73,7 +74,7 @@
     </div>
   </div>
 
-  <div class="note" id="prerequis"><b>Avant de commencer.</b> Il faut <b>Google Chrome</b> ou <b>Microsoft Edge</b> à jour (version 120 minimum). La procédure est la même ; les quelques différences d'Edge sont signalées en vert.</div>
+  <div class="note" id="prerequis"><b>Avant de commencer.</b> Il faut <b>Google Chrome</b> ou <b>Microsoft Edge</b> à jour (version 120 minimum). Les étapes 1, 2 et 4 à 7 sont communes ; l'étape 3 diffère selon le navigateur (<b>étape 3</b> pour Chrome, <b>étape 3 bis</b> pour Edge — faites celle qui vous concerne).</div>
 
   <!-- ÉTAPE 1 -->
   <section class="step" id="etape1">
@@ -108,11 +109,11 @@
     <p class="cap">Après extraction, le dossier <span class="path">extension</span> contient directement <code>manifest.json</code> et les autres fichiers.</p>
   </section>
 
-  <!-- ÉTAPE 3 -->
+  <!-- ÉTAPE 3 (CHROME) -->
   <section class="step" id="etape3">
-    <h2><span class="num">3</span> Ouvrir les extensions et activer le mode développeur</h2>
-    <p>Dans la barre d'adresse du navigateur, tapez <code>chrome://extensions</code> puis <kbd>Entrée</kbd>. En haut à droite, activez <b>Mode développeur</b>.</p>
-    <div class="edge"><b>Edge :</b> tapez plutôt <code>edge://extensions</code>. L'interrupteur <b>Mode développeur</b> se trouve en bas à gauche de la page.</div>
+    <h2><span class="num">3</span> Sur Google Chrome — ouvrir les extensions</h2>
+    <p>Dans la barre d'adresse, tapez <code>chrome://extensions</code> puis <kbd>Entrée</kbd>. En <b>haut à droite</b>, activez <b>Mode développeur</b>, puis cliquez sur <b>Charger l'extension non empaquetée</b>.</p>
+    <p class="cap">Vous utilisez Edge ? Passez directement à l'étape 3 bis ci-dessous.</p>
     <div class="fig">
       <svg viewBox="0 0 640 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Page des extensions avec le mode développeur activé et le bouton Charger l'extension non empaquetée">
         <rect x="0" y="0" width="640" height="230" fill="#fbfbfe"/>
@@ -134,11 +135,30 @@
     </div>
   </section>
 
+  <!-- ÉTAPE 3 bis (EDGE) -->
+  <section class="step" id="etape3bis">
+    <h2><span class="num" style="background:#0b7">3b</span> Sur Microsoft Edge — ouvrir les extensions</h2>
+    <p>Dans la barre d'adresse, tapez <code>edge://extensions</code> puis <kbd>Entrée</kbd>. En <b>bas à gauche</b>, activez <b>Mode développeur</b>, puis cliquez sur <b>Charger l'extension décompressée</b>.</p>
+    <p class="cap">Vous utilisez Chrome ? C'était l'étape 3 ci-dessus.</p>
+    <div class="fig">
+      <svg viewBox="0 0 640 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Page des extensions d'Edge avec le mode développeur en bas à gauche">
+        <rect x="0" y="0" width="640" height="230" fill="#fbfbfe"/>
+        <rect x="20" y="18" width="600" height="28" rx="14" fill="#fff" stroke="#dfe1ec"/>
+        <text x="40" y="37" font-family="Consolas,monospace" font-size="13" fill="#444">edge://extensions</text>
+        <text x="40" y="78" font-family="system-ui,Segoe UI,Arial" font-weight="700" font-size="18" fill="#1f2430">Extensions</text>
+        <rect x="40" y="100" width="250" height="34" rx="8" fill="#fff" stroke="#0b7"/>
+        <text x="60" y="122" font-family="system-ui" font-size="14" fill="#087">Charger l'extension décompressée</text>
+        <text x="40" y="196" font-family="system-ui" font-size="14" fill="#444">Mode développeur</text>
+        <rect x="190" y="184" width="44" height="18" rx="9" fill="#0b7"/><circle cx="225" cy="193" r="7" fill="#fff"/>
+        <text x="250" y="197" font-family="system-ui" font-size="12" fill="#6b7280">(interrupteur en bas à gauche)</text>
+      </svg>
+    </div>
+  </section>
+
   <!-- ÉTAPE 4 -->
   <section class="step" id="etape4">
-    <h2><span class="num">4</span> Charger l'extension non empaquetée</h2>
-    <p>Cliquez sur <b>Charger l'extension non empaquetée</b> (apparu à l'étape&nbsp;3), puis sélectionnez le dossier <span class="path">Documents\AtelierMEG\extension</span>.</p>
-    <div class="edge"><b>Edge :</b> le bouton s'appelle <b>Charger l'extension décompressée</b>.</div>
+    <h2><span class="num">4</span> Sélectionner le dossier de l'extension</h2>
+    <p>Dans la fenêtre qui s'ouvre, sélectionnez le dossier <span class="path">Documents\AtelierMEG\extension</span> puis validez.</p>
     <div class="fig">
       <svg viewBox="0 0 640 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Boîte de sélection du dossier extension">
         <rect x="0" y="0" width="640" height="220" fill="#fbfbfe"/>
@@ -200,11 +220,7 @@
   <!-- ÉTAPE 7 -->
   <section class="step" id="etape7">
     <h2><span class="num opt">7</span> Activer la mise à jour automatique <span style="font-size:13px;color:var(--o)">(recommandé, une seule fois)</span></h2>
-    <p>Pour que l'extension se mette à jour <b>toute seule</b> à l'avenir : ouvrez le dossier <span class="path">Documents\AtelierMEG\extension\maj</span> et double-cliquez sur <b><code>activer-maj-auto.cmd</code></b>.</p>
-    <ul>
-      <li>Cela crée une tâche planifiée Windows (sans droits administrateur) qui vérifie la version toutes les 2&nbsp;heures et à chaque ouverture de session.</li>
-      <li>Journal&nbsp;: <span class="path">maj\maj.log</span>. Pour arrêter&nbsp;: <code>desactiver-maj-auto.cmd</code>.</li>
-    </ul>
+    <p>Pour que l'extension se mette à jour <b>toute seule</b> à l'avenir : ouvrez le dossier <span class="path">Documents\AtelierMEG\extension\maj</span> et double-cliquez <b>une seule fois</b> sur <b><code>activer-maj-auto.cmd</code></b>. C'est tout.</p>
     <p class="cap">Sans cette étape, les <b>fonctionnalités</b> se mettent quand même à jour seules ; seule l'<b>extension elle-même</b> (rare) devra être réinstallée à la main — un bandeau vous préviendra alors dans MEG.</p>
   </section>
 
